@@ -42,20 +42,13 @@ def model2paras(x_rec, y_rec):
     """ generate 1d parameter vector from model"""
     return  np.concatenate([x_rec,y_rec])
 
-def paras2model(parameters, n_rec, timeshift=False ):
+def paras2model(parameters, n_rec):
     """ convert model parameter vector to coordinate pairs"""
     
-    n_shift = 1 if timeshift else 0  
-    #print(f"DEBUG: n_rec={n_rec}, n_shift={n_shift}, len_paras={len(parameters)}")
-    assert len(parameters) == 2*n_rec + n_shift
-    
+    assert len(parameters) == 2*n_rec
     x_rec = parameters[0:n_rec]
     y_rec = parameters[n_rec:2*n_rec]
-    if timeshift: 
-        paras_tshift = parameters[-1]
-        return (x_rec, y_rec, paras_tshift)
-    else: 
-        return (x_rec, y_rec)
+    return (x_rec, y_rec)
 
 
 def data2df(df, data, colname_data="traveltime_pred", residual=True, colname_obs="traveltime", colname_res="res_time", 
@@ -110,18 +103,14 @@ def forward_single(xy_src, xcoords_rec, ycoords_rec, t_shift=0, vel_water=1500, 
    return ((distsh**2 + wdepth**2)**0.5) / vel_water + t_shift
 
 
-def forward_multi(parameters, n_rec, x_src, y_src, z_src, vel_water=1500, timeshift_in_model=False, paras_tshift_ext=(0,),
+def forward_multi(parameters, n_rec, x_src, y_src, z_src, vel_water=1500, paras_tshift_ext=(0,),
                    weights=None, bools_rec=None, timestamps_shots=None, timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, 
                    sigma_noise=0):
     """ forward model from multiple sources to multiple receivers"""
     
-    paras_tmp = paras2model(parameters, n_rec, timeshift=timeshift_in_model)
+    paras_tmp = paras2model(parameters, n_rec)
     x_rec, y_rec = paras_tmp[0], paras_tmp[1]
-    if timeshift_in_model: 
-       tshift = paras_tmp[2]
-       raise ValueError("!! currently not supported")
-    else:
-        nparas_tshift = len(paras_tshift_ext)
+    nparas_tshift = len(paras_tshift_ext)
         
     assert n_rec==len(x_rec)==len(y_rec)
     n_src = len(x_src); assert len(y_src)==n_src
@@ -279,7 +268,7 @@ def gen_uncertainty_offset(lims_linear=(0,400), dec_chs=1, offset_max=250, lims_
 
 def create_weight_mat(d_weights, flatten=True):
     """ create weight matrix of uncorrelatated data weights  """
-    if flatten and d_weights.ndim>1: 
+    if d_weights.ndim>1 and flatten: 
         weights = d_weights.flatten()
     else:   weights = d_weights
     N = len(weights)

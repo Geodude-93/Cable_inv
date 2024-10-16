@@ -44,7 +44,7 @@ def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, record_time=
     nshots = len(x_src); assert nshots==len(y_src)
     ndata = sum(bools_rec.flatten().astype('int32')) #n_rec * nshots
     
-    x_rec, y_rec = paras2model(parameters, n_rec, timeshift=False)
+    x_rec, y_rec = paras2model(parameters, n_rec)
     
     tex_start = time.perf_counter() if record_time else None
     J = np.zeros([ndata,nparams]); ndata_filled=0
@@ -84,14 +84,12 @@ def inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val, jacobian, hessi
     
     delta_used = np.zeros(2)
     
-    grad = (jacobian.T @Wd.T @Wd @d_res) + alpha_tshift *tshift_paras
-    search_dir =  - hessian_inv @ grad
-    #print(f"\n DEBUG: grad={gradient_tshift[i]}, sd={search_dir_tshift[i]}}}")
+    grad = jacobian.T @Wd.T @Wd @d_res + alpha_tshift *tshift_paras
+    search_dir =  -hessian_inv @ grad
     steplen = steplen_init
     obj_val_new = obj_val
     rhs = gamma* grad @ search_dir
     ncalls_tshift=0
-    #print(f"DEBUG: obj_val_init={obj_val_new}, uneq: {steplen_tshift[i]*rhs_tshift[i] + obj_val}")
     while (obj_val_new > steplen*rhs + obj_val) and (ncalls_tshift<=ncalls_max):
         steplen = steplen_init * beta_steplen**ncalls_tshift
         delta = steplen * search_dir
@@ -135,8 +133,8 @@ def inv_iter_position(parameters, tshift_paras, d_res, obj_val, Wd, alpha, Wm, a
     hessian = jacobian.T @ Wd.T @ Wd @ jacobian + alpha* Wm.T@Wm
     hess_pos_def = utils.is_pos_def(hessian)
     hessian_inv = np.linalg.inv(hessian )
-    gradient = (jacobian.T @Wd.T @Wd @d_res) + alpha* Wm.T @Wm @ parameters # + #@smooth_mat
-    search_dir =  - hessian_inv @ gradient
+    gradient = jacobian.T @Wd.T @Wd @d_res + alpha* Wm.T @Wm @ parameters # + #@smooth_mat
+    search_dir =  -hessian_inv @ gradient
     
     steplen =  steplen_init
     obj_val_new = obj_val
@@ -198,11 +196,11 @@ uncert_without_apex=0.005           # additional uncertainty added to shots with
 #beta_pick_weight, beta_channel_weight, beta_shot_weight = 1.0, 0.0, 0.0 #0.8, 0.1, 0.1
 
 # true model 
-true_model=0                       # if true generate synthetic model and data 
+true_model=1                    # if true generate synthetic model and data 
 sign_coord_shift=+1                 # coordinate shift in positive (1) or negative (-1) direction
 offset_xy_true = (75, 150)          # offset in x and y of true model from initial model 
-tshift_paras_true = np.array((0.05, 2.5e-06)) # true time shift for synthetic model
-sinosoidal_cable=1; A_sin_cable=150 # introduce sinosoidal cable gemoetry if 1
+tshift_paras_true = np.array(( 0.008, 2.0e-07)) # true time shift for synthetic model
+sinosoidal_cable=0; amp_sin_cable=150 # introduce sinosoidal cable gemoetry if 1
 
 # init model 
 offset_xy_init=None               # shift the initial model in x-y from center acquisition line
@@ -244,18 +242,22 @@ df_picks = pd.read_csv(pickfile, sep='\t')
 shots_picks = np.unique(df_picks.shotnumber)
 n_shots = len(shots_picks)
 wdepth_mean=df_shots.src_wdepth.mean()
-x_src, y_src = [df_shots[label] for label in ("UTM_X","UTM_Y")]
+x_src, y_src = [df_shots[label].values for label in ("UTM_X","UTM_Y")]
 
 #remove offsets
-df_picks["offset_channel"] = (df_picks["offset_channel"]/DEC_CHS).astype('int32')
-df_picks["offset_channel_abs"] = (df_picks["offset_channel_abs"]/DEC_CHS).astype('int32')
 lims_offset_channels = tuple([ round(val/DEC_CHS) for val in lims_offset_meter])
 df_picks = utils_pd.sub_from_df(df_picks, lims_offset_channels, "offset_channel_abs" ) 
 
-channels_picks = np.unique(df_picks["chidx_local"])
+# determine channels to invert for 
+channels_picks = np.unique(df_picks["channel_idx"])
 chlims_picks = (channels_picks.min(), channels_picks.max())
 if np.any( np.diff(channels_picks)-1):
     print("WARNING: index of picked channels not constant")
+channels_used = np.arange(chlims_picks[0],chlims_picks[1]+1)
+assert np.array_equal(channels_picks, channels_used), "channels missing"
+df_picks = df_picks.merge(pd.DataFrame({"channel_idx":channels_used, "chidx_local":np.arange(0,len(channels_used))} ), \
+                          on="channel_idx").sort_values(\
+                              by=["shotnumber","channel_idx"], ignore_index=True)
     
 # create uncertainties linear increasing with offset
 df_uncertainties =  utils_cable_inv.gen_uncertainty_offset(lims_linear=(0,80), 
@@ -285,7 +287,7 @@ if true_model:
     df_cable_true = df_cable_init.copy()
     if sinosoidal_cable: 
         xtmp = np.linspace(0,2*np.pi,n_rec)
-        df_cable_true["UTM_X"] += A_sin_cable* sign_coord_shift*np.sin(xtmp)
+        df_cable_true["UTM_X"] += amp_sin_cable* sign_coord_shift*np.sin(xtmp)
     else:
         df_cable_true["UTM_X"] += sign_coord_shift* offset_xy_true[0]
         df_cable_true["UTM_Y"] += sign_coord_shift* offset_xy_true[1]
@@ -300,9 +302,9 @@ if true_model:
         df_cable_init["UTM_Y_init"] += offset_xy_init[1]
     
     df_obs = df_picks[["shotnumber","channel_idx","chidx_local"]]
-    d_obs = forward_multi(parameters_true, n_rec, df_shots["UTM_X"].values, df_shots["UTM_Y"].values, wdepth_mean, 
-                          vel_water=vel_water, timeshift_in_model=False, bools_rec=bools_chs, 
-                          paras_tshift_ext=tshift_paras_true, timestamps_shots=df_shots["timestamp_shot"].values,
+    d_obs = forward_multi(parameters_true, n_rec, x_src, y_src, wdepth_mean, 
+                          vel_water=vel_water, bools_rec=bools_chs, paras_tshift_ext=tshift_paras_true, 
+                          timestamps_shots=df_shots["timestamp_shot"].values,
                           sigma_noise=sigma_noise)
     df_obs["traveltime"] = d_obs; #df_obs.drop(columns="time_corr", inplace=True)
     
@@ -336,6 +338,7 @@ df_obs["weight"] = 1 / df_obs["uncertainty"]
 df_obs.sort_values(by=["shotnumber","channel_idx"], inplace=True, ignore_index=True)
 Wd = utils_cable_inv.create_weight_mat(df_obs.weight.values, flatten=False)
 
+
 #utils.done()
 
 smooth_mat = utils_cable_inv.fd_mat_xy(n_rec)
@@ -358,7 +361,7 @@ if plot_model:
     
     
 d_pred_init = forward_multi(parameters_init, n_rec, x_src, y_src, wdepth_mean, vel_water=vel_water, paras_tshift_ext=tshift_paras_init,
-                            timeshift_in_model=False, bools_rec=bools_chs, timestamps_shots=df_shots["timestamp_shot"].values)
+                             bools_rec=bools_chs, timestamps_shots=df_shots["timestamp_shot"].values)
 d_res = d_pred_init -d_obs
 df_pred = df_obs.copy()
 df_pred["traveltime_pred"]=d_pred_init
@@ -392,7 +395,7 @@ tshifts_iter = np.zeros((niter+1,2)); tshifts_iter[0,:]=tshift_paras_init
 misfits, rms_misfits, misfits_norm = [ np.zeros(niter+1) for q in range(3)]
 misfits[0]=misfit_init; misfits_norm[0]=misfit_norm_init;  rms_misfits[0]=rms_misfit_init
 
-#jacobian_tshift = jacobian_timeshift(df_shots["timestamp_shot"].values, bools_chs )
+jacobian_tshift = jacobian_timeshift(df_shots["timestamp_shot"].values, bools_chs )
 #gradient_tshift, search_dir_tshift, delta_tshift, delta_tshift_used = [np.zeros((niter,2)) for q in range(4)]
 #rhs_tshift, steplen_tshift = [np.zeros(niter) for q in range(2)]
 
@@ -413,7 +416,7 @@ for i in range(niter):
     alpha = np.max([ alpha_min, alpha_start* beta_alpha**i])
     
     # forward step
-    d_pred = forward_multi(parameters, n_rec, x_src, y_src, wdepth_mean, timeshift_in_model=False, 
+    d_pred = forward_multi(parameters, n_rec, x_src, y_src, wdepth_mean, 
                            bools_rec=bools_chs, paras_tshift_ext=tshift_paras, 
                            timestamps_shots=df_shots["timestamp_shot"].values )
     d_res = d_pred - d_obs 
@@ -422,8 +425,7 @@ for i in range(niter):
     #utils.done()
     
     args_fwd=[n_rec, x_src, y_src, wdepth_mean]
-    kargs_fwd = dict(timeshift_in_model=False, bools_rec=bools_chs, 
-                      timestamps_shots=df_shots["timestamp_shot"].values)
+    kargs_fwd = dict(bools_rec=bools_chs, timestamps_shots=df_shots["timestamp_shot"].values)
     kargs_obj = dict(alpha=alpha, Wd=Wd, Wm=smooth_mat)
 
     ### inversion for timeshift
@@ -439,9 +441,9 @@ for i in range(niter):
     ### inversion for cable position
     args_jac = [bools_chs, x_src, y_src, wdepth_mean]
     kargs_jac = dict(record_time=True, verbose=False, vel_water=vel_water)
-    args_fwd = [n_rec, x_src, y_src, wdepth_mean]
-    kargs_fwd = dict(timeshift_in_model=False, bools_rec=bools_chs, 
-                          timestamps_shots=df_shots["timestamp_shot"].values)
+    #args_fwd = [n_rec, x_src, y_src, wdepth_mean]
+    # kargs_fwd = dict(timeshift_in_model=False, bools_rec=bools_chs, 
+    #                       timestamps_shots=df_shots["timestamp_shot"].values)
     
     parameters_new, d_res, obj_val_new = inv_iter_position(parameters, tshift_paras, d_res, obj_val, Wd, alpha, smooth_mat, 
                                                          args_jac, args_fwd, kargs_jac=kargs_jac, 
@@ -463,8 +465,8 @@ for i in range(niter):
     rms_misfits[iterx] = utils_cable_inv.rms_misfit(d_res)
     misfits_norm[iterx] = utils_cable_inv.rms_misfit_weighted(d_res, 1/df_obs.weight.values)
     
-   print(f"""misfit: {misfits[iterx]:.1f}, misfit_norm: {misfits_norm[iterx]:.2f}, 
-          rms: {rms_misfits[iterx]:.3f}, time_iter: {time.perf_counter()-tex_start_iter:.1f}s""")
+    print(f"""misfit: {misfits[iterx]:.1f}, misfit_norm: {misfits_norm[iterx]:.2f}, 
+           rms: {rms_misfits[iterx]:.3f}, time_iter: {time.perf_counter()-tex_start_iter:.1f}s""")
           
     ## save intermediate results
     if iters_save is not None: 
