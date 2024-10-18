@@ -1,0 +1,10 @@
+# ignore plots
+./Figs/*
+
+# ignore outputs
+./Output/Cable/*
+./Ouput/Data/*
+./Output/Info/*
+
+# ignore pycache
+__pycache__
