@@ -8,6 +8,7 @@ Created on Tue May 21 19:17:51 2024
 
 import pandas as pd
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
 
 
 
@@ -182,5 +183,18 @@ def mean_std_by(df, colname_group, colname_data, colname_out_mean="mean", colnam
                                 colname_out_mean: mean_by.values, 
                                 colname_out_std:std_by.values} )
     return df_mean
+
+
+def gaussfilt_df(df, cname_sep="shotnumber", cname_data="traveltime", cname_filt="traveltime_gaussfilt", 
+                 sigma=3):
+    """ apply 1D gaussian  filter to separated section of DF"""
+    for i,val in enumerate(np.unique(df[cname_sep])):
+        df_tmp = df[df[cname_sep]==val]
+        df_tmp[cname_filt] = gaussian_filter1d(df_tmp[cname_data].values , sigma) 
+        if i==0: 
+            df_pro = df_tmp.copy()
+        else: 
+            df_pro = pd.concat([df_pro,df_tmp])
+    return df_pro
     
 

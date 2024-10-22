@@ -32,7 +32,7 @@ def array_size(arr, unit='gb'):
     return arr.size * arr.itemsize * fac 
 
 
-def is_pos_def(x, warning_lvl=1):
+def is_pos_def(x, warning_lvl=2):
     """ check if matrix is positive definite"""
     boolx = np.all(np.linalg.eigvals(x) > 0)
     

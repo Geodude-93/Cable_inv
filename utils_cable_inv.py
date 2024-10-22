@@ -64,6 +64,21 @@ def data2df(df, data, colname_data="traveltime_pred", residual=True, colname_obs
     return df_data
 
 
+def df_from_data(d, shots, channels):
+    """ create a dataframe from the 1D data array, the shots and channels"""
+    n_rec = channels.shape[0]
+    for s, shot in enumerate(shots):
+        df_tmp = pd.DataFrame(dict(shotnumber=(np.ones(n_rec)*shot).astype('int32'),
+                                   chidx_local=np.arange(0,n_rec), channel_idx=channels,
+                              traveltime=d[s*n_rec:s*n_rec+n_rec]))
+        if s==0: 
+            df = df_tmp.copy()
+        else: 
+            df = pd.concat([df, df_tmp])
+        
+    return df
+
+
     
 def gen_receivers(orig, m, n_rec=100, d=6.0, noise=0.0, sign_x=1, sign_y=-1):
     """ generate receiver line based on origin and slope"""
@@ -251,19 +266,27 @@ def add_offset2dfpicks(df, df_apex, label_channel="channel_idx", label_apex_chan
             
     return df_pro
 
-def gen_uncertainty_offset(lims_linear=(0,400), dec_chs=1, offset_max=250, lims_unc=(0.003,0.015), label_offset="offset_channel_abs" ):
+def gen_uncertainty_offset(lims_linear=(0,400), dec_chs=6, offset_max=250, lims_unc=(0.003,0.015), label_offset="offset_channel_abs", 
+                           offset_crit_angle=130, unc_crit=0.005):
         """ generate df with uncertainty as function of offset"""    
         
-        offsets_all = np.arange(0,offset_max+dec_chs,dec_chs) 
-        df = pd.DataFrame({label_offset:offsets_all, "uncertainty":np.ones(len(offsets_all))*lims_unc[1]})
+        lims_linear = [round(val/dec_chs) for val in lims_linear ]
         
-        offsets_tmp = np.arange(lims_linear[0],lims_linear[1]+dec_chs,dec_chs)
+        offsets_chs_all = np.arange(0,round(offset_max/dec_chs)+1) 
+        df = pd.DataFrame({label_offset:offsets_chs_all, "uncertainty":np.ones(len(offsets_chs_all))*lims_unc[1]})
+        
+        offsets_tmp = np.arange(lims_linear[0],lims_linear[1]+1)
         uncertainties = np.linspace(lims_unc[0], lims_unc[1], len(offsets_tmp)) #+ sigma_noise
         df_tmp = pd.DataFrame({label_offset:offsets_tmp, "uncertainty":uncertainties})
         
-        return pd.concat([df,df_tmp]).drop_duplicates(subset=label_offset, keep="last").sort_values(\
+        df =  pd.concat([df,df_tmp]).drop_duplicates(subset=label_offset, keep="last").sort_values(\
             by=label_offset).reset_index(drop=True)
 
+        if offset_crit_angle and unc_crit:
+            df.loc[df["offset_channel_abs"]> round(offset_crit_angle/dec_chs), "uncertainty"] += unc_crit
+        
+        return df
+            
 
 
 def create_weight_mat(d_weights, flatten=True):
@@ -376,7 +399,7 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
                   plot_channels_ref=True, channels_ref=None, interval_chs_ref=500, xlabel_tt="channel_idx", 
                   show_fig=True, ylabel_misfit="Weighted RMSE", yscale_misfit="linear", 
                   ylabel_tt=r"Traveltime + Time Shift [s]", plot_inset_zoom=True, paras_inset=None, 
-                  file_format='png'):
+                  file_format='png', kargs_subfig_labels=None):
     """ plot results of cable inversion, including positions, and data misfit"""
     
     # prep paras
@@ -537,7 +560,7 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
             axins.plot(df_cable_init["UTM_X_true"].values,df_cable_init["UTM_Y_true"].values, 
                        linewidth=plotparas["cable_true"]["linewidth"]*fac_linewidth, \
                        **utils.without_keys(plotparas["cable_true"], ("linewidth","label") ) )
-        elif df_cable_orig is not None:
+        elif df_cable_orig is not None and rec_true==False:
             axins.plot(df_cable_orig.UTM_X, df_cable_orig.UTM_Y, linewidth=plotparas["cable_orig"]["linewidth"]*fac_linewidth,\
             **utils.without_keys(plotparas["cable_orig"], ("linewidth","label") ))
         if rec_init:
@@ -589,7 +612,7 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
     #niter=len(idxes_iter)
     ax01.axhline(1, c='gray', label=r"$\epsilon_{target}$", linewidth=4, zorder=1, alpha=0.75)
     ax01.plot(idxes_iter, misfits[idxes_iter], '-o', markersize=3, zorder=2)
-    ax01.set(ylabel=ylabel_misfit, yscale=yscale_misfit, ylim=(0,None))
+    ax01.set(ylabel=ylabel_misfit, yscale=yscale_misfit, ylim=(0,misfits.max()))
     ax01.legend(loc="upper right")
     if tshifts is None:
         ax02.axis("off")
@@ -693,33 +716,29 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
                     ax1.annotate(shotnum,(ch_apex-3, time_apex-0.005), fontsize=8, va='bottom', zorder=4, 
                                  bbox=dict(boxstyle="round4", fc="w", ec="k", pad=0.2))
                     
-            ax1.scatter(df_data_tmp[xlabel_tt], df_data_tmp["traveltime_pred"], c=color, s=7.0, \
+            ax1.scatter(df_data_tmp[xlabel_tt], df_data_tmp["traveltime_pred"], color=color, s=7.0, \
                      alpha=alphas_iter[i], label=shotnum, zorder=zorders[i], edgecolors=edgecolor, \
                      linewidths=linewidth_edge)
             # residuals
     if plot_channels_ref:
-        chs_label = (channels_ref/DEC_CHS).astype('int32') if xlabel_tt=="channel_idx" else channels_ref
-        ax1.scatter(chs_label, np.ones(len(chs_label))*ylims_tt[1]-0.0185*np.diff(ylims_tt), marker='X', c='k', 
+        #chs_label = (channels_ref/DEC_CHS).astype('int32') if xlabel_tt=="channel_idx" else channels_ref
+        ax1.scatter(channels_ref, np.ones(len(channels_ref))*ylims_tt[1]-0.0185*np.diff(ylims_tt), marker='X', c='k', 
                     s=50, zorder=5 )
-        for c,ch in enumerate(chs_label):
+        for c,ch in enumerate(channels_ref):
             ax1.annotate(labels_chs[c], (ch, ylims_tt[1]-0.021*np.diff(ylims_tt) ), fontsize=12, 
                          fontweight='bold', zorder=6, va='bottom', ha='left')
-        ax1.set(ylabel=ylabel_tt, ylim=ylims_tt) 
-   
     if cbar:
         #sm = plt.cm.ScalarMappable(cmap=cmap) #norm=plt.Normalize(vmin=vmin_loss, vmax=vmax_loss) #
         plt.colorbar(cmap, ax=ax1,  location='right', fraction=0.05, pad=0.025, label="shot number") 
-    else:
-        xlabel_plot = "Channel index" if xlabel_tt=="channel_idx" else "Channel"
-        ax1.set(xlabel=xlabel_plot)
+    xlabel_plot = "Channel Index" if xlabel_tt=="channel_idx" else "Channel"
+    ax1.set(xlabel=xlabel_plot, ylabel=ylabel_tt, ylim=ylims_tt)
     if xlims_chs is not None: 
         _ = [ ax.set(xlim=xlims_chs) for ax in axes_tts]
         
     ax1.invert_yaxis()
     _ = [ ax.invert_xaxis() for ax in axes_tts ]
     if label_subs: 
-        utils_plot.label_subfigs(axes_all, 0.025, 0.975, labels=None, kw_text=None, zorder=5, halfbracket=True, 
-                          fontsize=12, xy_shifts={"1":(0.08,0) })
+        utils_plot.label_subfigs(axes_all, 0.025, 0.975, **kargs_subfig_labels)
     
     if figname: 
         fig.savefig(figname + f'.{file_format}', format=file_format, dpi=dpi, bbox_inches='tight' )
