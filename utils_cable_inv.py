@@ -747,3 +747,130 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
     return 
 
 
+
+
+def plot_residuals_data(df_data, df_shots, tshifts, iters_plot=(2,12), tshift_paras_true=None, 
+                   shots_plot=None, label_shots=True, xlims_chs=None,
+                  rec_true=True, title=None, shot_interval_plot=5, 
+                  cbar=False, ylims=(-0.05,0.05),
+                  figname=None, figsize=(10,5), dpi=150, 
+                  plot_channels_ref=True, channels_ref=None, interval_chs_ref=500, xlabel_tt="channel_idx", 
+                  show_fig=True, 
+                  ylabel_tt=r"Residual Time [s]", 
+                  file_format='png'):
+    
+    """ plot results data residuals """
+    
+    # prep paras
+    # plotparas = {"cable_true":{"linestyle":'-', "linewidth":5.5, "c":"gray",
+    #                            "label":r'$cable_{true}$', "zorder":2, "alpha":0.75}, 
+    #              "cable_init":{"linestyle":'-', "linewidth":2, "c":"k",
+    #                                         "label":r'$cable_{init}$', "zorder":1, "alpha":1.0}, 
+    #              "cable_iter":{"linestyle":'-', "zorder":3, "alpha":1.0}, 
+    #              "cable_orig":{"linestyle":'-', "linewidth":3.5, "c":"gray", 
+    #                                          "label":r'$cable_{orig}$', "zorder":1, "alpha":0.75}, 
+    #              "shots":{"marker":'*', "c":"r", "s":12,
+    #                                          "label":r'source', "zorder":4, "alpha":0.75},
+    #              "channels_ref_iter":{"marker":'X', "c":"k", "s":50, "edgecolor":None,
+    #                                         "zorder":7, "alpha":1.0}, 
+    #              "channels_ref_true":{"marker":'s', "c":"w", "s":110, "edgecolor":'k', "linewidths":1.5,
+    #                                         "zorder":6, "alpha":0.75}
+    #              }
+    
+    
+    iters = np.unique(df_data["iter"])
+    idxes_iter = [np.where(iters==it)[0][0] for it in iters_plot]
+     
+    fig, ax1 = plt.subplots(1,1, dpi=dpi, figsize=figsize)
+  
+    if tshifts is not None:
+        if tshifts.ndim==2: 
+            #tshifts_plot = tshifts[:,0]
+            
+            tshifts_total = get_time_shifts_shots(tshifts[idxes_iter,:], df_shots["timestamp_shot"],
+                                                  timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, mean=True)
+            if tshift_paras_true is not None:
+                tshift_total_true = get_time_shifts_shots(tshift_paras_true, df_shots["timestamp_shot"],
+                                                      timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, mean=True)
+    
+    # plot reference channels
+    if plot_channels_ref:
+        labels_chs=("A","B","C") #markersizes=(20,35,20);
+        if channels_ref is None:
+            channels_ref = np.array([ CHANNEL_REF + fac*(int(interval_chs_ref/DEC_CHS) ) for fac in (-1,0,1)], dtype='int32' ) 
+       
+    if shots_plot is not None: 
+       shotnums_plot = np.array(shots_plot)
+    elif shot_interval_plot is not None:  
+        shotnums_plot =  np.unique(df_data["shotnumber"])
+    shotlims_plot = (shotnums_plot.min(), shotnums_plot.max() )
+        
+    #df_data_plot = df_data[df_data["shotnumber"].isin(shots_plot)]
+    norm_cmap = mpl.colors.Normalize(vmin=shotlims_plot[0], vmax=shotlims_plot[1])
+    cmap = mpl.cm.ScalarMappable(norm=norm_cmap, cmap=mpl.cm.jet)
+    cmap.set_array([])
+    
+    niters_plot = len(iters_plot)
+    if niters_plot==1:
+        alphas_iter=(1,); zorders=(3,)
+    else:
+        alphas_iter=(0.3, 1); zorders=(2,3)
+    #shotnum_max_rel = shotnums.max() - shotnums.min()
+    
+    # if tshifts is not None: 
+    #     ax1.axhline(tshifts_total[-1], c="gray", linewidth=3, alpha=0.6, zorder=0)
+    
+    for i,iterx in enumerate(iters_plot):
+        
+    
+        for s, shotnum in enumerate(shotnums_plot):
+            color = cmap.to_rgba(shotnum)  #cmap((shotnum-shotnums.min()) / shotnum_max_rel)
+            if i+1==len(iters_plot):
+                edgecolor = 'k'; linewidth_edge=0.4
+            else:   edgecolor=color; linewidth_edge=None
+                
+            df_data_tmp = df_data[ (df_data["shotnumber"]==shotnum) & (df_data["iter"]==iterx)] 
+            if i==0:
+                _ = [ ax1.plot(df_data_tmp[xlabel_tt], fac*df_data_tmp["uncertainty"], linewidth=1.5,
+                             c=color, alpha=0.7, zorder=1) for fac in (-1,1)]
+                if label_shots: 
+                    if rec_true:
+                        data_smooth = gaussian_filter1d(df_data_tmp["traveltime"].values, 5)
+                        chidx_min = np.argmin(data_smooth)
+                        ch_apex, time_apex = [ df_data_tmp.iloc[chidx_min][label] for label in (xlabel_tt,"traveltime")]
+                    else:    
+                        info_shot = df_shots.loc[df_shots["shotnumber"]==shotnum].iloc[0]
+                        ch_apex, time_apex = int(info_shot["channel_idx_apex"]), info_shot["time_apex"]
+                        #ch_apex = int(ch_apex/DEC_CHS) if xlabel_tt=="channel_idx" else ch_apex
+                        #print(f"DEBUG: chapex={ch_apex}, time_apex={time_apex}")
+                    
+                    ax1.scatter(ch_apex, time_apex, marker='*', c='k', zorder=5, s=40)
+                    ax1.annotate(shotnum,(ch_apex-3, time_apex-0.005), fontsize=8, va='bottom', zorder=4, 
+                                 bbox=dict(boxstyle="round4", fc="w", ec="k", pad=0.2))
+                    
+            ax1.scatter(df_data_tmp[xlabel_tt], df_data_tmp["res_time"], color=color, s=7.0, \
+                     alpha=alphas_iter[i], label=shotnum, zorder=zorders[i], edgecolors=edgecolor, \
+                     linewidths=linewidth_edge)
+            # residuals
+    if plot_channels_ref:
+        #chs_label = (channels_ref/DEC_CHS).astype('int32') if xlabel_tt=="channel_idx" else channels_ref
+        ax1.scatter(channels_ref, np.ones(len(channels_ref))*ylims[1]-0.0185*np.diff(ylims), marker='X', c='k', 
+                    s=50, zorder=5 )
+        for c,ch in enumerate(channels_ref):
+            ax1.annotate(labels_chs[c], (ch, ylims[1]-0.021*np.diff(ylims) ), fontsize=12, 
+                         fontweight='bold', zorder=6, va='bottom', ha='left')
+    if cbar:
+        #sm = plt.cm.ScalarMappable(cmap=cmap) #norm=plt.Normalize(vmin=vmin_loss, vmax=vmax_loss) #
+        plt.colorbar(cmap, ax=ax1,  location='right', fraction=0.05, pad=0.025, label="Shot Number") 
+    xlabel_plot = "Channel Index" if xlabel_tt=="channel_idx" else "Channel"
+    ax1.set(xlabel=xlabel_plot, ylabel=ylabel_tt, xlim=xlims_chs ,ylim=ylims)
+    ax1.invert_yaxis(); ax1.invert_xaxis()
+    # if label_subs: 
+    #     utils_plot.label_subfigs(axes_all, 0.025, 0.975, **kargs_subfig_labels)
+    if figname: 
+        fig.savefig(figname + f'.{file_format}', format=file_format, dpi=dpi, bbox_inches='tight' )
+    if show_fig:
+        plt.show()
+    return 
+
+

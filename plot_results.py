@@ -17,7 +17,7 @@ import utils_cable_inv
 
 
 #input
-suffix = "pos_noisy"
+suffix = "sin"
 shotfile = "./Info/shots.csv"
 cablefile_orig = "./Info/cable_orig.csv"
 path_results="./Output/"
@@ -27,8 +27,8 @@ infofile = path_results + f'./Info/info_{suffix}.pkl'
 path_figs = "./Figs/"
 
 ## plot settings, manual
-save_fig=1
-idxes_iter = [1,-1]
+save_fig=0
+idxes_iter = [1,-2]
 
 xlims_map = (-600,800) #(-300, 800)
 y_center = 0 #-200
@@ -73,7 +73,7 @@ else:
     tshifts_total=None
     
 iters = np.unique(df_data["iter"])
-assert np.array_equal(iters,  np.unique(df_cable["iter"]) ) , "different iterations found for model and data"
+#assert np.array_equal(iters,  np.unique(df_cable["iter"]) ) , "different iterations found for model and data"
  #-1
 
 
@@ -163,24 +163,45 @@ print("done")
 utils.done()
 
 
+
+#%% plot residuals 
+
+save_fig=1
+
+ylims=(-0.025,0.025) if suffix_result=="real" else (-0.055,0.025)
+figsize=(8,4)
+
+figname_tmp = path_figs + f'restimes_{suffix_result}' if save_fig else None 
+utils_cable_inv.plot_residuals_data(df_data, df_shots, tshifts_iter, iters_plot=iters_plot, 
+                                    tshift_paras_true=tshift_paras_true_plot, figname=figname_tmp, 
+                                    shots_plot=shots_plot, 
+                                    label_shots=False, 
+                                    ylims=ylims, 
+                                    cbar=True, 
+                                    figsize=figsize
+                                    )
+utils.done()
+
 #%% 
 
-
+save_fig=1
 linewidth_start=6
 trans_start=0.6
 
 iters_all = np.unique(df_cable["iter"])   
 
-norm_cmap = mpl.colors.Normalize(vmin=iters_all[0]-50, vmax=100) #iters_all[-1]
+norm_cmap = mpl.colors.Normalize(vmin=iters_all[0], vmax=iters_all[-1]) #iters_all[-1]
+norm_cmap = mpl.colors.LogNorm(vmin=1, vmax=iters_all[-1])
+
 cmap = mpl.cm.ScalarMappable(norm=norm_cmap, cmap="Reds") #mpl.cm.jey
 cmap.set_array([])
 
-fig, axes = plt.subplots(2,1, sharex=True, figsize=(10,10), dpi=150)
+fig, axes = plt.subplots(2,1, sharex=True, figsize=(8,5), dpi=150)
 
 
 for i,it in enumerate(iters_all):
     color = cmap.to_rgba(it)
-    linewidth = max( (1.0,linewidth_start*0.85**i) )
+    linewidth = 2.5 #max( (1.0,linewidth_start*0.85**i) )
     trans = min( (1.0,trans_start*1.05**i) )
     
     df_cable_tmp=df_cable[df_cable["iter"]==it]
@@ -196,15 +217,18 @@ for i,it in enumerate(iters_all):
         
 #axes[0].set(ylabel="Distance from init model")
 #axes[1].set(ylabel="Distance from true model")
-axes[0].set(ylabel=r"$\Delta$x from $m_{init}$")
+axes[0].set(ylabel=r"$\Delta$x from $m_{init}$") #yscale='symlog'
 axes[1].set(ylabel=r"$\Delta$x from $m_{true}$")
 
-axes[-1].set(xlabel="channel_idx")
+axes[-1].set(xlabel="Channel  Index")
 axes[-1].invert_xaxis()
 
-cax = fig.add_axes([0.9,0.3, 0.025, 0.35] )
-plt.colorbar(cmap, cax=cax,  location='right', fraction=0.05, pad=0.025, label="iter") 
-cax.set(ylim=(0,None))
+cax = fig.add_axes([0.875, 0.3, 0.015, 0.35] )
+plt.colorbar(cmap, cax=cax,  location='right', fraction=0.05, pad=0.025, label="Iteration") 
+cax.set(ylim=(0,100))
+plt.subplots_adjust(right=0.85)
+if save_fig:
+    fig.savefig(path_figs + "cable_progress.png", format='png', bbox_inches='tight')
 
 plt.show()
 

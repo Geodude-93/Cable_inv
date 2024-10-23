@@ -182,7 +182,7 @@ path_figs = "./Figs/"
 
 ####################### SETTINGS ############################################
 
-save_results=1                 # save results as csv and pickle files for reload
+save_results=0                 # save results as csv and pickle files for reload
 
 ## settings forward 
 vel_water=1500                  # acoustic water velocity
@@ -190,9 +190,10 @@ sigma_noise = 0.003 #0.006      # random noise level for synthetic case
 sigma_gaussfilt_tt=3            # smoothing of traveltimes to determine apex of shot
 
 ### settings inversion
-niter=120 #80                    # number of iterations for inversion            
+niter=80 #80                    # number of iterations for inversion            
 interval_iter_save=10           # interval for iterations to save results
 iters_save = np.append(np.array([1,2]), np.arange(10,niter+interval_iter_save, interval_iter_save) )
+iters_save_cable=np.arange(0,niter+1)
 
 # data and weights
 lims_uncertainty= (0.003, 0.009)    # uncertainty limits for observed data
@@ -211,14 +212,14 @@ sign_coord_shift=1                 # coordinate shift in positive (1) or negativ
 offset_xy_true = (100, 75)          # offset in x and y of true model from initial model 
 sign_tshift=1
 tshift_paras_true = np.array(( 0.025, 3e-06))*sign_tshift # true time shift for synthetic model
-sinosoidal_cable=0;  # introduce sinosoidal cable gemoetry if 1
+sinosoidal_cable=1;  # introduce sinosoidal cable gemoetry if 1
 amp_sin_cable=150    # amplitude of sinosoidal coordinate anomaly in meter
 
 # init model 
 offset_xy_init=None #(-75,-75) #None               # shift the initial model in x-y from center acquisition line
 
 ## timeshift inversion
-invert_for_timeshift=0              # set 1 if inversion for time shift and cable position 
+invert_for_timeshift=1              # set 1 if inversion for time shift and cable position 
 tshift_paras_init = np.array((0.0, 0.0)) # initial time shift parameters
 alpha_tshift=1.0                    # regularization weight for time shift
 steplen_tshift_init, beta_steplen_tshift = 1.0, 0.5 # steplen parameters for time shift
@@ -463,7 +464,7 @@ hessian_inv_tshift = 1/(jacobian_tshift.T @ Wd.T @ Wd @ jacobian_tshift + alpha_
 #utils.done()
 
 ### Inversion
-niter_saved=0
+niter_saved, niter_saved_cable = 0, 0
 tex_start_all = time.perf_counter(); list_figs=[]
 for i in range(niter):
     tex_start_iter = time.perf_counter()
@@ -529,19 +530,26 @@ for i in range(niter):
           
     ## save intermediate results
     if iters_save is not None: 
-        if iterx in iters_save:
+        
+        if iterx in iters_save_cable:
             # save cable pos
             df_cable_tmp= pd.DataFrame(dict(UTM_X=xrec_new, UTM_Y=yrec_new, channel_idx=df_cable_init.channel_idx.values \
                                              ) ).sort_values(by="channel_idx", ignore_index=True)
             df_cable_tmp["iter"] = (np.ones(len(df_cable_tmp))*iterx).astype('int32')
+            
+            if niter_saved_cable==0: 
+                df_cable_all = df_cable_tmp.copy()
+            else: 
+                 df_cable_all = pd.concat([df_cable_all, df_cable_tmp])
+            niter_saved_cable+=1
+        
+        if iterx in iters_save:
             # save data
             df_data = data2df(df_obs, d_pred, colname_data="traveltime_pred", residual=True, colname_obs="traveltime", colname_res="res_time", 
                               iteration=iterx)
             if niter_saved==0: 
-                df_cable_all = df_cable_tmp.copy()
                 df_data_all = df_data.copy()
             else: 
-                df_cable_all = pd.concat([df_cable_all, df_cable_tmp])
                 df_data_all = pd.concat([df_data_all, df_data])
             niter_saved+=1
 
@@ -555,7 +563,7 @@ if invert_for_timeshift:
 
 ## plot settings
 
-iters_plot=iters_save[ [0,-1] ] #-1
+iters_plot=iters_save[ [0,-2] ] #-1
 xlims_map=(-600,800) #(-300, 800)
 y_center=0 #-200
 shot_interval_plot=20
@@ -644,7 +652,7 @@ utils_cable_inv.plot_inv_iter(df_cable_all, df_shots, df_data_all, misfits_norm,
 #print("done")
 
 #%% save results
-#save_results=1
+save_results=1
 
 if save_results: 
     path_results="./Output/"
