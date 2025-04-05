@@ -313,7 +313,7 @@ def fd_matrix(nparams):
     
 def fd_matrix_square(nparams):
     """
-    Create the finite difference matrix for regularization.
+    Create second order finite difference matrix for regularization.
     """
     fdmatrix = np.zeros((nparams - 1, nparams))
     for i in range(fdmatrix.shape[0]):
@@ -321,9 +321,8 @@ def fd_matrix_square(nparams):
         fdmatrix[i, i + 1] = 1
     return fdmatrix.T @ fdmatrix
 
-
-def fd_mat_xy(n):
-    """ create regularization matrix for x,y"""
+def fdmat_xy_sec(n):
+    """ create second order regularization matrix for x,y"""
     nparams = 2* n 
     
     fdmat = fd_matrix_square(n)
@@ -333,14 +332,14 @@ def fd_mat_xy(n):
     
     return fdmat_all
 
-def fd_mat_xy_square(n):
-    """ create regularization matrix for x,y and timeshift"""
+
+def fdmat_xy(n):
+    """ create regularization matrix for x,y"""
     nparams = 2* n 
-    
-    fdmat2 = fd_matrix_square(n)
+    fdmat = fd_matrix(n)
     fdmat_all = np.zeros([nparams,nparams])
-    fdmat_all[0:n,0:n] = fdmat2
-    fdmat_all[n:2*n,n:2*n] = fdmat2
+    fdmat_all[0:n,0:n] = fdmat
+    fdmat_all[n:2*n,n:2*n] = fdmat
     
     return fdmat_all
     
@@ -399,7 +398,7 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
                   plot_channels_ref=True, channels_ref=None, interval_chs_ref=500, xlabel_tt="channel_idx", 
                   show_fig=True, ylabel_misfit="Weighted RMSE", yscale_misfit="linear", 
                   ylabel_tt=r"Traveltime + Time Shift [s]", plot_inset_zoom=True, paras_inset=None, 
-                  file_format='png', kargs_subfig_labels=None):
+                  file_format='png', kargs_subfig_labels=None, width_ratios=(1,1), height_ratios=(1.75,1.75, 1.5)):
     """ plot results of cable inversion, including positions, and data misfit"""
     
     # prep paras
@@ -424,8 +423,8 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
             paras_inset_default.update(paras_inset)
         paras_inset = paras_inset_default
     
-    height_ratios=(1.75,1.75, 1.5)
-    width_ratios=(1,1) 
+    #height_ratios=(1.75,1.75, 1.5)
+     
     colors_cable=('darkorange', 'red') if len(iters_plot)==2 else ("red")
     ax_ratio_map = utils_plot.det_ax_ratio_map(figsize, width_ratios,
                                                   height_ratios=height_ratios, col_idx=0, row_idxes=[0,1])

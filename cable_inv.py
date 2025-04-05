@@ -202,18 +202,18 @@ uncert_without_apex=0.005           # additional uncertainty added to shots with
 uncert_crit_angle = 0.004
 offset_crit_angle = 130
 #beta_pick_weight, beta_channel_weight, beta_shot_weight = 1.0, 0.0, 0.0 #0.8, 0.1, 0.1
-only_even_shots=0                   # if 1 only even shot numbers are used
+only_even_shots=0                 # if 1 only even shot numbers are used
 only_odd_shots=0                    # # if 1 only odd shot numbers are used
 shot_interval_use=None #5 # None    # interval of used shots, default is None -> every shot is used
 
 # true model 
-true_model=1               # if true generate synthetic model and data 
+true_model=1                       # if true generate synthetic model and data 
 sign_coord_shift=1                 # coordinate shift in positive (1) or negative (-1) direction
-offset_xy_true = (100, 75)          # offset in x and y of true model from initial model 
+offset_xy_true = (100, 75)         # offset in x and y of true model from initial model 
 sign_tshift=1
-tshift_paras_true = np.array(( 0.025, 3e-06))*sign_tshift # true time shift for synthetic model
-sinosoidal_cable=1;  # introduce sinosoidal cable gemoetry if 1
-amp_sin_cable=150    # amplitude of sinosoidal coordinate anomaly in meter
+tshift_paras_true = np.array(( 0.025, 3e-06))*sign_tshift   # true time shift for synthetic model
+sinosoidal_cable=0;             # introduce sinosoidal cable gemoetry if 1
+amp_sin_cable=150               # amplitude of sinosoidal coordinate anomaly in meter
 
 # init model 
 offset_xy_init=None #(-75,-75) #None               # shift the initial model in x-y from center acquisition line
@@ -398,11 +398,12 @@ df_obs.sort_values(by=["shotnumber","channel_idx"], inplace=True, ignore_index=T
 Wd = utils_cable_inv.create_weight_mat(df_obs.weight.values, flatten=False)
 
 
-#utils.done()
 
-smooth_mat = utils_cable_inv.fd_mat_xy(n_rec)
+
+smooth_mat = utils_cable_inv.fdmat_xy_sec(n_rec)
+#plot_smooth_mat=1
 if plot_smooth_mat: 
-    fig=plt.figure(figsize=(10,8), dpi=150); 
+    #fig=plt.figure(figsize=(10,8), dpi=150); 
     mesh = plt.matshow(smooth_mat) #smooth_mat_square
     plt.colorbar(mesh)
     plt.title("smooth mat")
@@ -417,6 +418,8 @@ if plot_model:
     ax.set(xlabel="X", ylabel="Y")
     ax.legend()
     plt.show()
+    
+#utils.done()
     
     
 d_pred_init = forward_multi(parameters_init, n_rec, x_src, y_src, wdepth_mean, vel_water=vel_water, paras_tshift_ext=tshift_paras_init,
