@@ -14,7 +14,7 @@ import pickle
 from Functions import utils, utils_pd
 import utils_cable_inv
 from utils_cable_inv import model2paras, paras2model, data2df, df_from_data, forward_multi, \
-        lsqr_misfit_model, TIMESTAMP_FIRST_SHOT_LINE2 #datavec2data
+        lsqr_misfit_model, _path_lengths, _traveltimes_rays, TIMESTAMP_FIRST_SHOT_LINE2 #datavec2data
 
 
 def jacobian_timeshift(timestamps_shots, bools_rec, timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2 ):
@@ -31,11 +31,6 @@ def jacobian_timeshift(timestamps_shots, bools_rec, timestamp_orig=TIMESTAMP_FIR
         counter += ndata_shot
         
     return J
-
-
-def _ddm_coord(coords, coords_sec, coords_src, z_src, vel_water=1500):
-    """ derivative of forward equation w.r.t. receiver coordinates """
-    return (coords-coords_src[0]) / (vel_water*( (coords-coords_src[0])**2 + (coords_sec-coords_src[1])**2 + z_src**2)**0.5)
 
 def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, record_time=True, verbose=False, vel_water=1500): 
     """ create the analytical jacobian"""
@@ -65,7 +60,7 @@ def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, record_time=
                 coords_sec = parameters[0:n_rec][bools_rec_tmp]
             coords = parameters[k*n_rec:k*n_rec+n_rec][bools_rec_tmp]
         
-            derivatives = _ddm_coord(coords, coords_sec, coords_src, z_src, vel_water=vel_water)
+            derivatives = utils_cable_inv._ddm_coord(coords, coords_sec, coords_src, z_src, vel_water=vel_water)
             assert len(derivatives)==len(idxes_rec_used)
             for i, (idx_rec, ddm) in enumerate(zip( idxes_rec_used, derivatives) ):
                 J[ndata_filled+i, idx_rec + nparas_before] = ddm
@@ -190,7 +185,7 @@ sigma_noise = 0.003 #0.006      # random noise level for synthetic case
 sigma_gaussfilt_tt=3            # smoothing of traveltimes to determine apex of shot
 
 ### settings inversion
-niter=80 #80                    # number of iterations for inversion            
+niter=20 #80                    # number of iterations for inversion            
 interval_iter_save=10           # interval for iterations to save results
 iters_save = np.append(np.array([1,2]), np.arange(10,niter+interval_iter_save, interval_iter_save) )
 iters_save_cable=np.arange(0,niter+1)

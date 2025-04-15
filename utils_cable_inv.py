@@ -112,6 +112,23 @@ def gen_cable_init_apexes(df_shots, dec_chs=6, label_channel_apex="channel_idx_a
     return df_cable
 
 
+def _path_lengths(coords, coords_sec, coords_src, z_src):
+    """ compute path lengths for straight rays"""
+    return  ( (coords-coords_src[0])**2 + (coords_sec-coords_src[1])**2 + z_src**2)**0.5 
+
+def _traveltimes_rays(coords, coords_sec, coords_src, z_src, vel_water=1500):
+    """ compute traveltimes for straight rays"""
+    return _path_lengths(coords, coords_sec, coords_src, z_src) / vel_water
+    
+
+def _ddm_coord(coords, coords_sec, coords_src, z_src, vel_water=1500):
+    """ derivative of forward equation w.r.t. receiver coordinates """
+    return (coords-coords_src[0]) / (vel_water*_path_lengths(coords, coords_sec, coords_src, z_src))
+    #return (coords-coords_src[0]) / (vel_water*( (coords-coords_src[0])**2 + (coords_sec-coords_src[1])**2 + z_src**2)**0.5)
+
+
+
+
 def forward_single(xy_src, xcoords_rec, ycoords_rec, t_shift=0, vel_water=1500, wdepth=65):
    """ forward model arrival times for a single sources """
    distsh = dists_2d(np.array([xcoords_rec,ycoords_rec]).T, xy_src) 
@@ -147,9 +164,10 @@ def forward_multi(parameters, n_rec, x_src, y_src, z_src, vel_water=1500, paras_
             tshift = paras_tshift_ext[0] + paras_tshift_ext[1]* (timestamps_shots[s] - timestamp_orig)
         else: 
             tshift = paras_tshift_ext[0]
-            
-        d_tmp = (1/vel_water)* (xrec_tmp**2 - 2*xrec_tmp*x_src[s] + x_src[s]**2 + yrec_tmp**2 - 2*yrec_tmp*y_src[s] + y_src[s]**2 + z_src**2 \
-               )**0.5  + tshift #+ (s+delta_shotnum_origin)*paras_tshift[1])
+        
+        d_tmp = _traveltimes_rays(xrec_tmp, yrec_tmp, (x_src[s],y_src[s]), z_src, vel_water=vel_water) + tshift #+ (s+delta_shotnum_origin)*paras_tshift[1])
+        # d_tmp = (1/vel_water)* (xrec_tmp**2 - 2*xrec_tmp*x_src[s] + x_src[s]**2 + yrec_tmp**2 - 2*yrec_tmp*y_src[s] + y_src[s]**2 + z_src**2 \
+        #        )**0.5  + tshift #+ (s+delta_shotnum_origin)*paras_tshift[1])
         
         if s==0: 
             d = d_tmp.copy()
