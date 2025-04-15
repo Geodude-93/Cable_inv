@@ -58,6 +58,25 @@ def cut_df_by_coordinates(df, xlims, ylims=None, labels_coords=("UTM_X","UTM_Y")
             df_new.reset_index(drop=True, inplace=True)
         return df_new
     
+    
+def scale_cols(df, colnames, scale_factors, inplace=True):
+    """ scale columns of dataframe"""
+    
+    if inplace:
+        df_mod=df
+    else:
+        df_mod=df.copy()
+    
+    if isinstance(colnames, str): 
+        colnames=[colnames]
+    if isinstance(scale_factors, (int,float)): 
+        scale_factors = np.ones(len(colnames))*scale_factors
+        
+    for colname,fac in zip(colnames,scale_factors):
+        df_mod[colname] *= fac
+        
+    return df_mod
+    
 def average_cols(df, colnames, colname_out, drop=True):
     """ average columns in pd Dataframe (and drop input columns)"""
     

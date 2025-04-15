@@ -17,7 +17,7 @@ import utils_cable_inv
 
 
 #input
-suffix = "sin"
+suffix = "sin" #"sin_even_srcs"
 shotfile = "./Info/shots.csv"
 cablefile_orig = "./Info/cable_orig.csv"
 path_results="./Output/"
@@ -27,23 +27,37 @@ infofile = path_results + f'./Info/info_{suffix}.pkl'
 path_figs = "./Figs/"
 
 ## plot settings, manual
-save_fig=0
+save_fig=1
 idxes_iter = [1,-2]
 
-xlims_map = (-600,800) #(-300, 800)
+width_ratios=(2, 1.25)
+height_ratios=(1.75,1.75, 1.0)
+xlims_map = (-450,600) #(-600,800) #(-300, 800)
 y_center = 0 #-200
 shot_interval_plot = 20
-xlims_chs = (7450, 7825) #None #(45_000,46_850)
+xlims_chs = (7630,7780) #(7450, 7825) #None #(45_000,46_850)
 shots_plot=(260,275,290,305,320,335,350)
 shots_plot= np.arange(255,370,15)
+shots_plot=(260,275,290,305,320,335,350)
 #shots_plot = [shot-7 for shot in shots_plot]
 
-plot_inset_zoom=True
+plot_inset_zoom=False #True
 paras_inset = {"orig":(75,75), "dxdy":(150,150), "width":0.45, "xy_anker":(0.02,0.02) }
-figsize=(8.5,8.5); dpi=150
+figsize=(5,6.5); dpi=150
+label_subs=False
 kargs_subfig_labels = dict(labels=None, kw_text=None, zorder=5, halfbracket=True, 
                   fontsize=13, xy_shifts={"1":(0.08,0),"3":(-0.02,0)} )
 
+plot_params = {
+         'figure.titlesize': 11,
+         'axes.labelsize': 10.5,
+         'axes.titlesize': 10.5,
+         'xtick.labelsize': 10.5,
+         'ytick.labelsize':10.5,
+         'xtick.major.size': 5.0,
+         'ytick.major.size': 5.0, 
+         'legend.fontsize': 9.5}
+plt.rcParams.update(plot_params)
 
 
 df_shots = pd.read_csv(shotfile, sep='\t')
@@ -130,7 +144,7 @@ iters_plot = iters[ idxes_iter ]
     
 
 # plotting
-figname_tmp = path_figs + f'cable_inv_{suffix_result}' if save_fig else None
+figname_tmp = path_figs + f'cable_inv_{suffix_result}_test' if save_fig else None
 utils_cable_inv.plot_inv_iter(df_cable, df_shots, df_data, info["misfit"], tshifts_iter, 
                               iters_plot=iters_plot, 
                               xlims_chs=xlims_chs, 
@@ -149,7 +163,7 @@ utils_cable_inv.plot_inv_iter(df_cable, df_shots, df_data, info["misfit"], tshif
                               ylims_tt=ylims_tt, 
                               ylims_tshift=ylims_tshift, 
                               figname=figname_tmp,
-                              label_subs=True, 
+                              label_subs=label_subs, 
                               figsize=figsize, 
                               dpi=dpi, 
                               xlabel_tt="channel_idx", 
@@ -157,7 +171,9 @@ utils_cable_inv.plot_inv_iter(df_cable, df_shots, df_data, info["misfit"], tshif
                               paras_inset=paras_inset, 
                               plot_channels_ref=True, 
                               yscale_misfit="log", 
-                              kargs_subfig_labels=kargs_subfig_labels)
+                              kargs_subfig_labels=kargs_subfig_labels, 
+                              width_ratios=width_ratios, 
+                              height_ratios=height_ratios)
 
 print("done")
 utils.done()
