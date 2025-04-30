@@ -32,7 +32,9 @@ def jacobian_timeshift(timestamps_shots, bools_rec, timestamp_orig=TIMESTAMP_FIR
         
     return J
 
-def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, record_time=True, verbose=False, vel_water=1500): 
+def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, tt_squared=False,
+                        tshift_paras=None, timestamps=None, timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, 
+                        record_time=True, verbose=False, vel_water=1500): 
     """ create the analytical jacobian"""
     
     nparams = len(parameters); assert nparams%2==0
@@ -41,6 +43,10 @@ def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, record_time=
     ndata = sum(bools_rec.flatten().astype('int32')) #n_rec * nshots
     
     x_rec, y_rec = paras2model(parameters, n_rec)
+    
+    if tt_squared:
+        tau0, htau = tshift_paras[0], tshift_paras[1]
+        assert timestamps is not None, "shot timestamps need be provided" 
     
     tex_start = time.perf_counter() if record_time else None
     J = np.zeros([ndata,nparams]); ndata_filled=0
@@ -59,8 +65,13 @@ def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, record_time=
                 coords_src = (y_src[s], x_src[s] )
                 coords_sec = parameters[0:n_rec][bools_rec_tmp]
             coords = parameters[k*n_rec:k*n_rec+n_rec][bools_rec_tmp]
-        
-            derivatives = utils_cable_inv._ddm_coord(coords, coords_sec, coords_src, z_src, vel_water=vel_water)
+            
+            if tt_squared: 
+                delta_t = timestamps[s]-timestamp_orig
+                derivatives = utils_cable_inv._ddm_ttsq_coord(coords, coords_sec, coords_src,
+                                                              z_src, tau0, htau, delta_t, v=vel_water)
+            else: 
+               derivatives = utils_cable_inv._ddm_coord(coords, coords_sec, coords_src, z_src, v=vel_water)
             assert len(derivatives)==len(idxes_rec_used)
             for i, (idx_rec, ddm) in enumerate(zip( idxes_rec_used, derivatives) ):
                 J[ndata_filled+i, idx_rec + nparas_before] = ddm
@@ -458,6 +469,8 @@ jacobian_tshift = jacobian_timeshift(df_shots["timestamp_shot"].values, bools_ch
 #rhs_tshift, steplen_tshift = [np.zeros(niter) for q in range(2)]
 
 hessian_inv_tshift = 1/(jacobian_tshift.T @ Wd.T @ Wd @ jacobian_tshift + alpha_tshift) # * smooth_mat.T@smooth_mat
+
+#H = utils_cable_inv.hessian(x_rec, y_rec, coords_src, z_src, v=1500)
 
 #utils.done()
 
