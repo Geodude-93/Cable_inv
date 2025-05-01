@@ -119,7 +119,8 @@ def _path_lengths(coords, coords_sec, coords_src, z_src):
 def _traveltimes_rays(coords, coords_sec, coords_src, z_src, v=1500):
     """ compute traveltimes for straight rays"""
     return _path_lengths(coords, coords_sec, coords_src, z_src) / v
-    
+
+## derivatives 
 
 def _ddm_coord(coords, coords_sec, coords_src, z_src, v=1500):
     """ derivative of forward equation w.r.t. receiver coordinates """
@@ -137,7 +138,9 @@ def _dxdy_coord(coords, coords_sec, coords_src, z_src, v=1500):
     """ cross derivative of forward equation w.r.t. receiver coordinates """
     return (-1)* ( ( (coords-coords_src[0])*(coords_sec-coords_src[1]) ) \
                   / (v* ( (coords-coords_src[0])**2 +(coords_sec-coords_src[1])**2 +z_src**2 )**1.5 ) )
-            
+          
+
+        
 def hessian(x_rec, y_rec, coords_src, z_src, v=1500):
     """create full Hessian """
     
@@ -170,9 +173,11 @@ def hessian(x_rec, y_rec, coords_src, z_src, v=1500):
 
 def _ddm_ttsq_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t, v=1500):
     """ derivative of squared forward equation w.r.t. receiver coordinates """
+    
     return (2*(coords-coords_src[0])* ( _traveltimes_rays(coords, coords_sec, coords_src, z_src, v=v) 
-                                       + delta_t*htau, +tau0) ) \
+                                       +tau0 + htau*delta_t ) ) \
         / (v* _path_lengths(coords, coords_sec, coords_src, z_src))
+        
         
 def _ddm2_ttsq_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t, v=1500 ):
     """ second derivative of squared forward equation w.r.t. receiver coordinates """
