@@ -220,7 +220,7 @@ path_figs = "./Figs/"
 save_results=0                 # save results as csv and pickle files for reload
 
 ## settings forward 
-tt_squared=True;               # square traveltimes / forward equation to convexify error surface
+tt_squared=False;               # square traveltimes / forward equation to convexify error surface
 vel_water=1500                  # acoustic water velocity
 sigma_noise = 0.003 #0.006      # random noise level for synthetic case 
 sigma_gaussfilt_tt=3            # smoothing of traveltimes to determine apex of shot
@@ -626,6 +626,8 @@ figsize=(8.5,8.5); dpi=150
 kargs_subfig_labels = dict(labels=None, kw_text=None, zorder=5, halfbracket=True, 
                   fontsize=13, xy_shifts={"1":(0.08,0),"3":(-0.02,0)} )
 
+ylims_misfit=(0,10)
+
 # automatic plot settings
 if true_model:
     ylims_tt=(0.0, 0.4) if sinosoidal_cable else  (0.0, 0.3) #(-0.1, 0.3)
@@ -670,7 +672,7 @@ if sigma_noise >= 0.006:
 if tt_squared: 
     ylims_tt=(0, 0.18)
     
-    
+
 
 # plotting
 figname_tmp = path_figs + f'cable_inv_{suffix_result}'
@@ -691,6 +693,7 @@ utils_cable_inv.plot_inv_iter(df_cable_all, df_shots, df_data_all, misfits_norm,
                               cbar=False, 
                               ylims_tt=ylims_tt, 
                               ylims_tshift=ylims_tshift, 
+                              ylims_misfit=ylims_misfit,
                               figname=figname_tmp,
                               label_subs=True, 
                               figsize=figsize, 

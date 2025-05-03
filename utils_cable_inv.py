@@ -171,6 +171,8 @@ def hessian(x_rec, y_rec, coords_src, z_src, v=1500):
     
     return H
 
+#derivatives for squared forward equation 
+
 def _ddm_ttsq_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t, v=1500):
     """ derivative of squared forward equation w.r.t. receiver coordinates """
     
@@ -185,61 +187,47 @@ def _ddm2_ttsq_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t,
     dists = _path_lengths(coords, coords_sec, coords_src, z_src, v)
     dists_sq = dists**2
     
-    A = (-1*(coords-coords_src[0])**2 *( dists + v*htau*delta_t + v*tau0 ) )
-    B = (  dists_sq *( dists + htau*delta_t*v + tau0*v ) )
-    C = ( (coords-coords_src[0])**2 * dists  )
-    D = (v**2 * dists_sq**1.5 )
+    A = (-1)*(coords-coords_src[0])**2 *( dists + v*htau*delta_t + v*tau0 )
+    B =  dists_sq *( dists + htau*delta_t*v + tau0*v )
+    C =  (coords-coords_src[0])**2 * dists
+    D = v**2 * dists_sq**1.5
     
     result = (2*(A+B+C)) / D
     
     return result
 
-def hessian_ttsq(x_rec, y_rec, coords_src, z_src, tau0, htau, delta_t, v=1500):
-    """create full Hessian for squared forward equation"""
+def _dxdy_ttsq_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t, v=1500 ):
+    """ cross derivatives of squared forward equation w.r.t. receiver coordinates"""
     
-    xy_src = np.array(coords_src)
-    
-    tex_start=time.perf_counter()
-    
-    nparams = 2*x_rec.shape[0]
-    H = np.zeros([nparams,nparams])
-    
-    #populate d2/dx2
-    ddx2 = _ddm2_ttsq_coord(x_rec, y_rec, xy_src, z_src, tau0, htau, delta_t, v=v )
-    ddy2 = _ddm2_ttsq_coord(y_rec, x_rec, np.flip(xy_src), z_src, tau0, htau, delta_t, v=v )
-    
-    for i in range(nparams):
-        H[i,i] = ddx2[i]
-        H[i+nparams,i+nparams] = ddy2[i]
-    
-    
-    # populate cross derivatives dxdy
-    dxdy = ddmxy_coord(x_rec, y_rec, xy_src, z_src, tau0, htau, delta_t, v=v)
-    dydx = ddmxy_coord(y_rec, x_rec , np.flip(xy_src), z_src, tau0, htau, delta_t, v=v)
-    for i in range(nparams):
-        H[i,i+nparams] = dxdy[i]
-        H[i+nparams,i] = dydx[i]
-        
-    print("Hessian constructed in {:.3f}s".format(time.perf_counter()-tex_start) )
-    
-    return H
+    return ( -2*(coords_src[0]-coords)*(coords_src[1]-coords_sec)*(htau*delta_t+tau0) ) \
+        / (v*((coords_src[0]-coords)**2 + (coords_src[1]-coords_sec)**2 + z_src**2)**1.5 )
 
-def ddmxy_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t, v=1500):
-    """second cross derivative dxdy of forward equation """  
+
+def _ddmxy_ttsq_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t, v=1500):
+    """cross derivative dxdy of squared forward equation """  
+
     return ( 2*(coords-coords_src[0])* (coords_src[1]-coords_sec)* (htau*delta_t*+tau0) ) \
         / (v* (coords_src[0]**2 -2*coords_src[0]*coords + coords_src[1]**2 -2*coords_src[1]*coords_sec \
              + z_src + coords**2 + coords_sec**2  ) )**1.5
     
 
 def _ddm_ttsq_tau0(coords, coords_sec, coords_src, z_src, tau0, ht, delta_t, v=1500):
-    """ 1. forward derivative of of F^2(m) w.r.t tau0"""
+    """ 1. derivative of squared forward Eq. w.r.t tau0"""
     return 2*( _traveltimes_rays(coords, coords_sec, coords_src, z_src, v=v) \
               + ht*delta_t + tau0)
         
+def _ddm2_ttsq_tau0(n):
+    """ 2. derivative of squared forward Eq. w.r.t tau0"""
+    return np.ones(n, dtpe='float32')*2
+
 def _ddm_ttsq_ht(coords, coords_sec, coords_src, z_src, tau0, ht, delta_t, v=1500):
-    """ 1. forward derivative of F^2(m) w.r.t ht"""
+    """ 1. derivative of squared forward Eq. w.r.t htau"""
     return 2*delta_t*( _traveltimes_rays(coords, coords_sec, coords_src, z_src, v=v) \
               + ht*delta_t + tau0)
+        
+def _ddm2_ttsq_ht(n, delta_t):
+    """ 2. derivative of squared forward Eq. w.r.t ht"""
+    return np.ones(n, dtpe='float32')*2* delta_t**2
 
 
 
@@ -527,7 +515,7 @@ def plot_hessian_iter(hessian, hessian_inv, grad, delta_paras, title=None):
 def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,12), tshift_paras_true=None, 
                   df_cable_init=None, df_cable_orig=None, shots_plot=None, label_shots=True, xlims_chs=None,
                   rec_init=True, rec_true=True, rec_iter=True, title=None, shot_interval_plot=5, xlims_map=(-300, 800), 
-                  y_center=-200, cbar=True, ylims_tt=(0,0.5), ylims_tshift=None,
+                  y_center=-200, cbar=True, ylims_tt=(0,0.5), ylims_tshift=None, ylims_misfit=None, 
                   figname=None, label_subs=False, shot_interval_annotate=5, figsize=(10,10), dpi=150, 
                   plot_channels_ref=True, channels_ref=None, interval_chs_ref=500, xlabel_tt="channel_idx", 
                   show_fig=True, ylabel_misfit="Weighted RMSE", yscale_misfit="linear", 
@@ -745,7 +733,7 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
     #niter=len(idxes_iter)
     ax01.axhline(1, c='gray', label=r"$\epsilon_{target}$", linewidth=4, zorder=1, alpha=0.75)
     ax01.plot(idxes_iter, misfits[idxes_iter], '-o', markersize=3, zorder=2)
-    ax01.set(ylabel=ylabel_misfit, yscale=yscale_misfit, ylim=(0,misfits.max()))
+    ax01.set(ylabel=ylabel_misfit, yscale=yscale_misfit, ylim=ylims_misfit)
     ax01.legend(loc="upper right")
     if tshifts is None:
         ax02.axis("off")
