@@ -5,7 +5,7 @@ Created on Mon Oct 14 18:55:07 2024
 
 @author: keving
 """
-import time
+import time, sys
 import numpy as np, pandas as pd
 from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
@@ -32,7 +32,37 @@ def jacobian_timeshift(timestamps_shots, bools_rec, timestamp_orig=TIMESTAMP_FIR
         
     return J
 
-def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, record_time=True, verbose=False, vel_water=1500): 
+def jacobian_timeshift_ttsq(parameters, paras_tshift, bools_rec, x_src, y_src, z_src, timestamps_shots,
+                            vel_water=1500, timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2 ):
+    """ jacobian of timeshift model for squared forward equation"""
+    
+    nparams = len(parameters); assert nparams%2==0
+    n_rec = int(nparams/2); 
+    x_rec, y_rec = paras2model(parameters, n_rec)
+    
+    nshots = bools_rec.shape[0]
+    assert len(timestamps_shots)==nshots
+    ndata = sum(bools_rec.flatten().astype('int32'))
+    
+    J = np.zeros([ndata,2]);  counter=0
+    for s in range(nshots):
+        bools_tmp = bools_rec[s,:]
+        ndata_shot = sum(bools_tmp.astype('int32'))
+        delta_t = timestamps_shots[s] - timestamp_orig
+        
+        # fill in derivatives
+        J[counter:counter+ndata_shot,0] = utils_cable_inv._ddm_ttsq_tau0(x_rec[bools_tmp], y_rec[bools_tmp], (x_src[s], y_src[s]),
+                                                                         z_src, paras_tshift[0], paras_tshift[1], delta_t, v=vel_water)
+        J[counter:counter+ndata_shot,1] = utils_cable_inv._ddm_ttsq_ht(x_rec[bools_tmp], y_rec[bools_tmp], (x_src[s], y_src[s]), z_src, 
+                                                                       paras_tshift[0], paras_tshift[1], delta_t, v=vel_water)
+        
+        counter += ndata_shot
+        
+    return J
+
+def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, tt_squared=False,
+                        tshift_paras=None, timestamps=None, timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, 
+                        record_time=True, verbose=False, vel_water=1500): 
     """ create the analytical jacobian"""
     
     nparams = len(parameters); assert nparams%2==0
@@ -41,6 +71,10 @@ def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, record_time=
     ndata = sum(bools_rec.flatten().astype('int32')) #n_rec * nshots
     
     x_rec, y_rec = paras2model(parameters, n_rec)
+    
+    if tt_squared:
+        tau0, htau = tshift_paras[0], tshift_paras[1]
+        assert timestamps is not None, "shot timestamps need be provided" 
     
     tex_start = time.perf_counter() if record_time else None
     J = np.zeros([ndata,nparams]); ndata_filled=0
@@ -59,8 +93,14 @@ def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, record_time=
                 coords_src = (y_src[s], x_src[s] )
                 coords_sec = parameters[0:n_rec][bools_rec_tmp]
             coords = parameters[k*n_rec:k*n_rec+n_rec][bools_rec_tmp]
-        
-            derivatives = utils_cable_inv._ddm_coord(coords, coords_sec, coords_src, z_src, vel_water=vel_water)
+            
+            if tt_squared: 
+                delta_t = timestamps[s]-timestamp_orig
+                derivatives = utils_cable_inv._ddm_ttsq_coord(coords, coords_sec, coords_src,
+                                                              z_src, tau0, htau, delta_t, v=vel_water)
+            else: 
+               derivatives = utils_cable_inv._ddm_coord(coords, coords_sec, coords_src, z_src, v=vel_water)
+               
             assert len(derivatives)==len(idxes_rec_used)
             for i, (idx_rec, ddm) in enumerate(zip( idxes_rec_used, derivatives) ):
                 J[ndata_filled+i, idx_rec + nparas_before] = ddm
@@ -125,7 +165,7 @@ def inv_iter_position(parameters, tshift_paras, d_res, obj_val, Wd, alpha, Wm, a
                     steplen_init=1.0, gamma=1e-3, ncalls_max=200):
     """ iteration of coordinate inversion"""
     
-    jacobian = jacobian_analytical(parameters,  *args_jac, **kargs_jac)
+    jacobian = jacobian_analytical(parameters,  *args_jac, tshift_paras=tshift_paras, **kargs_jac)
     hessian = jacobian.T @ Wd.T @ Wd @ jacobian + alpha* Wm.T@Wm
     hess_pos_def = utils.is_pos_def(hessian)
     hessian_inv = np.linalg.inv(hessian )
@@ -180,12 +220,13 @@ path_figs = "./Figs/"
 save_results=0                 # save results as csv and pickle files for reload
 
 ## settings forward 
+tt_squared=False;               # square traveltimes / forward equation to convexify error surface
 vel_water=1500                  # acoustic water velocity
 sigma_noise = 0.003 #0.006      # random noise level for synthetic case 
 sigma_gaussfilt_tt=3            # smoothing of traveltimes to determine apex of shot
 
 ### settings inversion
-niter=20 #80                    # number of iterations for inversion            
+niter=40 #80                    # number of iterations for inversion            
 interval_iter_save=10           # interval for iterations to save results
 iters_save = np.append(np.array([1,2]), np.arange(10,niter+interval_iter_save, interval_iter_save) )
 iters_save_cable=np.arange(0,niter+1)
@@ -336,7 +377,7 @@ if true_model:
     d_obs = forward_multi(parameters_true, n_rec, x_src, y_src, wdepth_mean, 
                           vel_water=vel_water, bools_rec=bools_chs_all, paras_tshift_ext=tshift_paras_true, 
                           timestamps_shots=df_shots["timestamp_shot"].values,
-                          sigma_noise=sigma_noise)
+                          sigma_noise=sigma_noise, squared=tt_squared)
     
     df_obs = df_from_data(d_obs, shots_picks, channels_used)
     
@@ -418,7 +459,7 @@ if plot_model:
     
     
 d_pred_init = forward_multi(parameters_init, n_rec, x_src, y_src, wdepth_mean, vel_water=vel_water, paras_tshift_ext=tshift_paras_init,
-                             bools_rec=bools_chs, timestamps_shots=df_shots["timestamp_shot"].values)
+                             bools_rec=bools_chs, timestamps_shots=df_shots["timestamp_shot"].values, squared=tt_squared)
 d_res = d_pred_init -d_obs
 df_pred = df_obs.copy()
 df_pred["traveltime_pred"]=d_pred_init
@@ -453,11 +494,13 @@ misfits, rms_misfits, misfits_norm = [ np.zeros(niter+1) for q in range(3)]
 misfits[0]=misfit_init; misfits_norm[0]=misfit_norm_init;  rms_misfits[0]=rms_misfit_init
 alphas = np.zeros(niter)
 
-jacobian_tshift = jacobian_timeshift(df_shots["timestamp_shot"].values, bools_chs )
+jac_tshift = jacobian_timeshift(df_shots["timestamp_shot"].values, bools_chs )
 #gradient_tshift, search_dir_tshift, delta_tshift, delta_tshift_used = [np.zeros((niter,2)) for q in range(4)]
 #rhs_tshift, steplen_tshift = [np.zeros(niter) for q in range(2)]
 
-hessian_inv_tshift = 1/(jacobian_tshift.T @ Wd.T @ Wd @ jacobian_tshift + alpha_tshift) # * smooth_mat.T@smooth_mat
+hessian_inv_tshift = 1/(jac_tshift.T @ Wd.T @ Wd @ jac_tshift + alpha_tshift) # * smooth_mat.T@smooth_mat
+
+#H = utils_cable_inv.hessian(x_rec, y_rec, coords_src, z_src, v=1500)
 
 #utils.done()
 
@@ -476,20 +519,28 @@ for i in range(niter):
     # forward step
     d_pred = forward_multi(parameters, n_rec, x_src, y_src, wdepth_mean, 
                            bools_rec=bools_chs, paras_tshift_ext=tshift_paras, 
-                           timestamps_shots=df_shots["timestamp_shot"].values )
+                           timestamps_shots=df_shots["timestamp_shot"].values, 
+                           squared=tt_squared)
     d_res = d_pred - d_obs 
     obj_val = lsqr_misfit_model(d_res, parameters, alpha=alphas[i], Wd=Wd, Wm=smooth_mat)
     
     #utils.done()
     
     args_fwd=[n_rec, x_src, y_src, wdepth_mean]
-    kargs_fwd = dict(bools_rec=bools_chs, timestamps_shots=df_shots["timestamp_shot"].values)
+    kargs_fwd = dict(bools_rec=bools_chs, timestamps_shots=df_shots["timestamp_shot"].values, 
+                     squared=tt_squared)
     kargs_obj = dict(alpha=alphas[i], Wd=Wd, Wm=smooth_mat)
 
     ### inversion for timeshift
     if invert_for_timeshift:
         
-        tshift_paras_new = inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val, jacobian_tshift, hessian_inv_tshift,  Wd, 
+        if tt_squared: 
+            jac_tshift = jacobian_timeshift_ttsq(parameters, tshift_paras, bools_chs, x_src, y_src, wdepth_mean, df_shots["timestamp_shot"].values,
+                                        vel_water=vel_water)
+            hessian_inv_tshift = np.linalg.inv(jac_tshift.T @ Wd.T @ Wd @ jac_tshift + alpha_tshift)
+        #utils.done()
+        
+        tshift_paras_new = inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val, jac_tshift, hessian_inv_tshift,  Wd, 
                            alpha_tshift=alpha_tshift, steplen_init=1.0, gamma=gamma_tshift, beta_steplen=beta_steplen_tshift,
                                args_fwd=args_fwd, kargs_fwd=kargs_fwd, kargs_obj=kargs_obj, 
                                thresh_delta=thresh_delta_tshift, 
@@ -498,7 +549,8 @@ for i in range(niter):
 
     ### inversion for cable position
     args_jac = [bools_chs, x_src, y_src, wdepth_mean]
-    kargs_jac = dict(record_time=True, verbose=False, vel_water=vel_water)
+    kargs_jac = dict(tt_squared=tt_squared, timestamps=df_shots["timestamp_shot"].values, 
+                     record_time=True, verbose=False, vel_water=vel_water)
     #args_fwd = [n_rec, x_src, y_src, wdepth_mean]
     # kargs_fwd = dict(timeshift_in_model=False, bools_rec=bools_chs, 
     #                       timestamps_shots=df_shots["timestamp_shot"].values)
@@ -561,7 +613,7 @@ if invert_for_timeshift:
 
 ## plot settings
 
-iters_plot=iters_save[ [0,-2] ] #-1
+iters_plot=iters_save[ [0,-1] ] #-1
 xlims_map=(-600,800) #(-300, 800)
 y_center=0 #-200
 shot_interval_plot=20
@@ -573,6 +625,8 @@ paras_inset = {"orig":(75,75), "dxdy":(150,150), "width":0.45, "xy_anker":(0.02,
 figsize=(8.5,8.5); dpi=150
 kargs_subfig_labels = dict(labels=None, kw_text=None, zorder=5, halfbracket=True, 
                   fontsize=13, xy_shifts={"1":(0.08,0),"3":(-0.02,0)} )
+
+ylims_misfit=(0,10)
 
 # automatic plot settings
 if true_model:
@@ -615,6 +669,10 @@ if sigma_noise >= 0.006:
     suffix_result +="_noisy"
     
     
+if tt_squared: 
+    ylims_tt=(0, 0.18)
+    
+
 
 # plotting
 figname_tmp = path_figs + f'cable_inv_{suffix_result}'
@@ -635,6 +693,7 @@ utils_cable_inv.plot_inv_iter(df_cable_all, df_shots, df_data_all, misfits_norm,
                               cbar=False, 
                               ylims_tt=ylims_tt, 
                               ylims_tshift=ylims_tshift, 
+                              ylims_misfit=ylims_misfit,
                               figname=figname_tmp,
                               label_subs=True, 
                               figsize=figsize, 
@@ -647,7 +706,7 @@ utils_cable_inv.plot_inv_iter(df_cable_all, df_shots, df_data_all, misfits_norm,
 
 
 
-#print("done")
+print("done"); sys.exit()
 
 #%% save results
 save_results=1
