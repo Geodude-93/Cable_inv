@@ -229,6 +229,10 @@ def _ddm2_ttsq_ht(n, delta_t):
     """ 2. derivative of squared forward Eq. w.r.t ht"""
     return np.ones(n, dtpe='float32')*2* delta_t**2
 
+def _dtau_dh_ttsq(n, delta_t):
+    """cross derivative of squared forward Eq. w.r.t tau and ht"""
+    return np.ones(n, dtpe='float32')*2* delta_t
+
 
 
 def forward_single(xy_src, xcoords_rec, ycoords_rec, t_shift=0, vel_water=1500, wdepth=65):
@@ -238,7 +242,7 @@ def forward_single(xy_src, xcoords_rec, ycoords_rec, t_shift=0, vel_water=1500, 
 
 
 def forward_multi(parameters, n_rec, x_src, y_src, z_src, vel_water=1500, paras_tshift_ext=(0,),
-                   weights=None, bools_rec=None, timestamps_shots=None, timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, 
+                   weights=None, bools_rec=None, delta_ts=None, 
                    sigma_noise=0, squared=False):
     """ forward model from multiple sources to multiple receivers"""
     
@@ -263,7 +267,7 @@ def forward_multi(parameters, n_rec, x_src, y_src, z_src, vel_water=1500, paras_
         
         # determine time shift 
         if nparas_tshift==2: 
-            tshift = paras_tshift_ext[0] + paras_tshift_ext[1]* (timestamps_shots[s] - timestamp_orig)
+            tshift = paras_tshift_ext[0] + paras_tshift_ext[1]* delta_ts[s]
         else: 
             tshift = paras_tshift_ext[0]
         
