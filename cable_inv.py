@@ -7,14 +7,14 @@ Created on Mon Oct 14 18:55:07 2024
 """
 import time, sys
 import numpy as np, pandas as pd
-from scipy.ndimage import gaussian_filter1d
+#from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 import pickle
 
 from Functions import utils, utils_pd
 import utils_cable_inv
 from utils_cable_inv import model2paras, paras2model, data2df, df_from_data, forward_multi, \
-        lsqr_misfit_model, _path_lengths, _traveltimes_rays, TIMESTAMP_FIRST_SHOT_LINE2 #datavec2data
+        lsqr_misfit_model, TIMESTAMP_FIRST_SHOT_LINE2 #datavec2data
 
 
 def jacobian_timeshift(delta_ts, bools_rec ):
@@ -86,10 +86,8 @@ def ddm_jacobian_timeshift(parameters, paras_tshift, bools_rec, x_src, y_src, z_
             else:
                 ddm2 = utils_cable_inv._ddm2_ttsq_ht(ndata_shot, delta_t)
         
-            #ddm2_tot = ddm2 + ddxddy 
-        
             # fill in derivatives
-            J[counter:counter+ndata_shot,p] = ddm2 + ddxddy #ddm2_tot
+            J[counter:counter+ndata_shot,p] = ddm2 + ddxddy
            
         counter += ndata_shot
         
@@ -148,7 +146,7 @@ def jacobian_analytical(parameters, bools_rec, x_src, y_src, z_src, tt_squared=F
 
 def ddm_jacobian(parameters, tshift_paras, bools_rec, x_src, y_src, z_src, tt_squared=False, delta_ts=None,
                  record_time=True, verbose=False, vel_water=1500): 
-    """ derivatives of the analytical jacobian"""
+    """ derivatives of the jacobian of the receiver coordinates"""
     
     nparams = len(parameters); assert nparams%2==0
     n_rec = int(nparams/2); 
@@ -199,8 +197,9 @@ def ddm_jacobian(parameters, tshift_paras, bools_rec, x_src, y_src, z_src, tt_sq
     return J 
 
 
-def inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val,  Wd, jacobian=None, hessian_inv=None, alpha_tshift=1.0, 
-                       steplen_init=1.0, gamma=1e-3, beta_steplen=0.5, tt_squared=False, args_jac=None, 
+def inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val,  Wd, 
+                       alpha=1.0, steplen_init=1.0, gamma=1e-3, beta_steplen=0.5, 
+                       tt_squared=False, jacobian=None, args_jac=None, 
                        kargs_jac=None, args_fwd=None, kargs_fwd=None, 
                        kargs_obj=None, thresh_delta=None, full_newton=False, 
                        it=0, full_output=False, verbose=True, vel_water=1500,
@@ -209,34 +208,34 @@ def inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val,  Wd, jacobian=N
     
     if tt_squared==False and full_newton==True: 
         print("!!! WARNING: full_newton can only be applied with tt_squared since the second derivatives are otherwise zero")
-        time.sleep(5)
+        time.sleep(1)
     
-    delta_used = np.zeros(2)
-
+    delta_used = np.zeros(len(tshift_paras), dtype='float32')
+    
     if tt_squared:
         assert args_jac is not None, "provide list of key arguments to generate Jacobian"
         jacobian = jacobian_timeshift_ttsq(parameters, tshift_paras, *args_jac, vel_water=vel_water)
-        hessian = jacobian.T @ Wd.T @ Wd @ jacobian  + alpha_tshift 
-    
-        if full_newton:
-            ddm_jac = ddm_jacobian_timeshift(parameters, tshift_paras, *args_jac, tt_squared=tt_squared,
-                                        vel_water=vel_water )
-            hessian +=  ddm_jac.T @ jacobian
-            
-        hess_pos_def = utils.is_pos_def(hessian)
-        hessian_inv = np.linalg.inv(hessian )
-    else: 
-        assert jacobian is not None and hessian_inv is not None, "provide jacobian and hessian_inv when tt_squared==full_newton==False"
+    else:
+        if jacobian is None:
+            jacobian = jacobian_timeshift(kargs_fwd["delta_ts"], kargs_fwd["bools_rec"]  )
         
+    hessian = jacobian.T @ Wd.T @ Wd @ jacobian + alpha*np.eye(len(tshift_paras))
     
-    grad = jacobian.T @Wd.T @Wd @d_res + alpha_tshift *tshift_paras
+    if full_newton:
+        ddm_jac = ddm_jacobian_timeshift(parameters, tshift_paras, *args_jac, tt_squared=tt_squared, vel_water=vel_water )
+        hessian +=  ddm_jac.T @ jacobian
+            
+    hess_pos_def = utils.is_pos_def(hessian)
+    hessian_inv = np.linalg.inv(hessian )
+    
+    grad = jacobian.T @Wd.T @Wd @d_res + alpha *tshift_paras
     search_dir =  -hessian_inv @ grad
     steplen = steplen_init
     obj_val_new = obj_val
     rhs = gamma* grad @ search_dir
-    ncalls_tshift=0
-    while (obj_val_new > steplen*rhs + obj_val) and (ncalls_tshift<=ncalls_max):
-        steplen = steplen_init * beta_steplen**ncalls_tshift
+    ncalls=0
+    while (obj_val_new > steplen*rhs + obj_val) and (ncalls<=ncalls_max):
+        steplen = steplen_init * beta_steplen**ncalls
         delta = steplen * search_dir
         tshift_paras_new = tshift_paras + delta
         d_pred_tmp = forward_multi(parameters, *args_fwd, paras_tshift_ext=tshift_paras_new, 
@@ -244,8 +243,8 @@ def inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val,  Wd, jacobian=N
         d_res_tmp = d_pred_tmp - d_obs
         obj_val_new = lsqr_misfit_model(d_res_tmp, parameters,  **kargs_obj)
         #print(f"DEBUG: ncalls:{ncalls_tshift}, obj={obj_val_new}, steplen:{steplen_tshift[i]}, delta_t:{delta_tshift[i]}")
-        ncalls_tshift+=1
-    if ncalls_tshift==0:
+        ncalls+=1
+    if ncalls==0:
         delta = steplen_init*search_dir
     
     # clip delta timeshift 
@@ -260,8 +259,8 @@ def inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val,  Wd, jacobian=N
         delta_used = delta
     tshift_paras_new = tshift_paras + delta_used
     if verbose:
-        print("\n iter={}, delta_tshift_used={}, tshift_new={}, misfit={}, ncalls={}, grad={}".format( \
-                    it,delta_used,tshift_paras_new,obj_val_new,ncalls_tshift,grad) )
+        print("\n iter={}, delta_tshift_used={}, tshift_new={}, misfit={}, ncalls={}, alpha={:.1f}".format( \
+                    it,delta_used,tshift_paras_new,obj_val_new,ncalls,alpha) )
     
     if full_output: 
         return (tshift_paras_new, delta_used, delta, grad, search_dir, steplen)
@@ -333,17 +332,16 @@ path_figs = "./Figs/"
 
 save_results=0                 # save results as csv and pickle files for reload
 
-## settings forward 
+##  forward 
 tt_squared=False;               # square traveltimes / forward equation to convexify error surface
-
 vel_water=1500                  # acoustic water velocity
 sigma_noise = 0.003 #0.006      # random noise level for synthetic case 
-sigma_gaussfilt_tt=3            # smoothing of traveltimes to determine apex of shot
+sigma_gaussfilt_tt=3            # smoothing of traveltimes to determine apex channel of shot
 
-### settings inversion
+###  general inversion
 full_newton=False;              # use the full newton algorithm and the second derivatives
-niter=40 #80                    # number of iterations for inversion            
-interval_iter_save=10           # interval for iterations to save results
+niter=15 #80                    # number of iterations for inversion            
+interval_iter_save=5           # interval for iterations to save results
 iters_save = np.append(np.array([1,2]), np.arange(10,niter+interval_iter_save, interval_iter_save) )
 iters_save_cable=np.arange(0,niter+1)
 
@@ -371,23 +369,23 @@ amp_sin_cable=150               # amplitude of sinosoidal coordinate anomaly in 
 offset_xy_init=None #(-75,-75) #None               # shift the initial model in x-y from center acquisition line
 
 ## timeshift inversion
-invert_for_timeshift=1              # set 1 if inversion for time shift and cable position 
+invert_for_timeshift=1            # set 1 if inversion for time shift and cable position 
 tshift_paras_init = np.array((0.0, 0.0)) # initial time shift parameters
-alpha_tshift=1.0                    # regularization weight for time shift
+#alpha_tshift=1.0e+06                    # regularization weight for time shift
+alpha_tshift_start, alpha_tshift_min = 5.0e+05, 1.0e+03 
 steplen_tshift_init, beta_steplen_tshift = 1.0, 0.5 # steplen parameters for time shift
 
 #clip_tshift_iter=True
-thresh_delta_tshift=(0.025, 1e-5)    # thresholds for time shift parameter updates
+thresh_delta_tshift = (0.025, 1e-5) #(0.025, 1e-5)    # thresholds for time shift parameter updates
 gamma_tshift = 0.001                # weight used in steplen estimation (see Eqs.)
 
 ## coordinate inversion 
 steplen_init, beta_steplen = 1.0, 0.5   # steplen parameters for cable position inversion (see Eqs)
 gamma=0.001 #0.0001 #0.0001 # 0.01      # weight used in steplen estimation (see Eqs.)
-
 ncalls_max=200                          # max number of call to determine the step length
 alpha_start, alpha_min = 100, 0.1       # min and max regularization weights for cable pos inversion
 beta_alpha = 0.8 #0.8                   # regularization decay (see Eqs)
-thresh_delta_xy = 25 #50 #25 #50        # clip model updates, set to None or 0 if undesired
+thresh_delta_xy = 50 #25 #50 #25 #50        # clip model updates, set to None or 0 if undesired
 apply_gauss_filt=0; sigma_smoothing=3   # apply gaussian smoothing during iterations
 
 
@@ -604,23 +602,20 @@ if plot_dobs:
     
 
     
-# prepare inversion 
-#nparams = len(parameters_init)
+# prep general inversion 
 tshifts_iter = np.zeros((niter+1,2)); tshifts_iter[0,:]=tshift_paras_init
-misfits, rms_misfits, misfits_norm = [ np.zeros(niter+1) for q in range(3)]
+misfits, rms_misfits, misfits_norm = [ np.zeros(niter+1, dtype='float32') for q in range(3)]
 misfits[0]=misfit_init; misfits_norm[0]=misfit_norm_init;  rms_misfits[0]=rms_misfit_init
-alphas = np.zeros(niter)
+alphas, alphas_tshift = [ np.zeros(niter, dtype='float32') for q in range(2) ]
 
 # prep time shift inversion 
-if invert_for_timeshift:
-    if tt_squared: 
-        jac_tshift, hessian_inv_tshift = None, None; # are computed in the in the inversion iteration function           
-    else:   # are constants
-        jac_tshift = jacobian_timeshift(df_shots["delta_t"].values, bools_chs )
-        hessian_inv_tshift = np.linalg.inv(jac_tshift.T @ Wd.T @ Wd @ jac_tshift + alpha_tshift) # * smooth_mat.T@smooth_mat
+# if invert_for_timeshift:
+if tt_squared:          # jacobian and hessian are npt constant and are thus computed each iteration 
+    jac_tshift = None;
+else:                   # jacobian and hessian are constant and are precomputed
+    jac_tshift = jacobian_timeshift(df_shots["delta_t"].values, bools_chs )
+    #hessian_inv_tshift = np.linalg.inv(jac_tshift.T @ Wd.T @ Wd @ jac_tshift + alpha_tshift)
 
-
-#H = utils_cable_inv.hessian(x_rec, y_rec, coords_src, z_src, v=1500)
 
 #utils.done()
 
@@ -649,7 +644,7 @@ for i in range(niter):
     # define args and kargs
     args_fwd=[n_rec, x_src, y_src, wdepth_mean]
     kargs_fwd = dict(bools_rec=bools_chs, delta_ts=df_shots["delta_t"].values, 
-                     squared=tt_squared)
+                     squared=tt_squared, vel_water=vel_water)
     
     kargs_obj = dict(alpha=alphas[i], Wd=Wd, Wm=smooth_mat)
     args_jac = [bools_chs, x_src, y_src, wdepth_mean, df_shots["delta_t"].values]
@@ -657,29 +652,45 @@ for i in range(niter):
     ### inversion for timeshift
     if invert_for_timeshift:
         
-        tshift_paras_new = inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val,  Wd, 
-                             jacobian=jac_tshift, hessian_inv=hessian_inv_tshift,
-                           alpha_tshift=alpha_tshift, steplen_init=1.0, gamma=gamma_tshift, beta_steplen=beta_steplen_tshift,
-                               args_fwd=args_fwd, kargs_fwd=kargs_fwd, kargs_obj=kargs_obj, 
-                               thresh_delta=thresh_delta_tshift, 
-                               it=iterx, full_output=False, full_newton=full_newton,
-                               )
+        alphas_tshift[i] = np.max([ alpha_tshift_min, alpha_tshift_start* beta_alpha**i])
+        
+        tshift_paras_new = inv_iter_timeshift(parameters, tshift_paras, d_res, obj_val, Wd,
+                             tt_squared=tt_squared,
+                             jacobian=jac_tshift,
+                             alpha=alphas_tshift[i],
+                             steplen_init=1.0,
+                             gamma=gamma_tshift,
+                             beta_steplen=beta_steplen_tshift,
+                             args_fwd=args_fwd,
+                             kargs_fwd=kargs_fwd,
+                             kargs_obj=kargs_obj,
+                             args_jac=args_jac,
+                             thresh_delta=thresh_delta_tshift,
+                             it=iterx,
+                             full_output=False,
+                             full_newton=full_newton,
+                             )
 
     ### inversion for cable position
+    # define args and kargs
     args_jac = [bools_chs, x_src, y_src, wdepth_mean]
     kargs_jac = dict(tt_squared=tt_squared, delta_ts=df_shots["delta_t"].values, 
                      record_time=True, verbose=False, vel_water=vel_water)
-    #args_fwd = [n_rec, x_src, y_src, wdepth_mean]
-    # kargs_fwd = dict(timeshift_in_model=False, bools_rec=bools_chs, 
-    #                       timestamps_shots=df_shots["timestamp_shot"].values)
     
-    parameters_new, d_res, obj_val_new = inv_iter_position(parameters, tshift_paras, d_res, obj_val, Wd, alphas[i], smooth_mat, 
-                                                         args_jac, args_fwd, kargs_jac=kargs_jac, 
-                                                         kargs_fwd=kargs_fwd, thresh_delta=thresh_delta_xy, 
-                                                         steplen_init=steplen_init, gamma=gamma, ncalls_max=ncalls_max, 
-                                                         full_newton=full_newton)
+    parameters_new, d_res, obj_val_new = inv_iter_position(parameters, tshift_paras, d_res, obj_val, Wd,
+                                                         alphas[i], smooth_mat,
+                                                         args_jac,
+                                                         args_fwd,
+                                                         kargs_jac=kargs_jac,
+                                                         kargs_fwd=kargs_fwd,
+                                                         thresh_delta=thresh_delta_xy,
+                                                         steplen_init=steplen_init,
+                                                         gamma=gamma,
+                                                         ncalls_max=ncalls_max,
+                                                         full_newton=full_newton
+                                                         )
 
-    if apply_gauss_filt: 
+    if apply_gauss_filt:  # use extra smoothing, not used by default
        parameters_new = utils_cable_inv.smooth_params_gauss(parameters_new, n_rec, sigma_smoothing)
     
     # assign new parameters and time shift
@@ -690,7 +701,7 @@ for i in range(niter):
     xrec_new, yrec_new = paras2model(parameters, n_rec)
     
     # save different misfit metrics
-    misfits[iterx] =  obj_val_new 
+    misfits[iterx] =  obj_val_new
     rms_misfits[iterx] = utils_cable_inv.rms_misfit(d_res)
     misfits_norm[iterx] = utils_cable_inv.rms_misfit_weighted(d_res, 1/df_obs.weight.values)
     
@@ -698,7 +709,7 @@ for i in range(niter):
            rms: {rms_misfits[iterx]:.3f}, time_iter: {time.perf_counter()-tex_start_iter:.1f}s""")
           
     ## save intermediate results
-    if iters_save is not None: 
+    if iters_save is not None:
         
         if iterx in iters_save_cable:
             # save cable pos
@@ -749,7 +760,7 @@ ylims_misfit=(0,10)
 
 # automatic plot settings
 if true_model:
-    ylims_tt=(0.0, 0.4) if sinosoidal_cable else  (0.0, 0.3) #(-0.1, 0.3)
+    ylims_tt=(0.0, 0.4) if sinosoidal_cable else  (0.0, 0.4) #(-0.1, 0.3)
     ylims_tshift=(None,1.05*tshifts_total.max()) if invert_for_timeshift else None
     
     if invert_for_timeshift:
@@ -764,7 +775,7 @@ if true_model:
         
     else: 
         suffix_result="simple"
-        ylims_tt=(0, 0.375)
+        ylims_tt=(0, 0.25)
         tshift_paras_true_plot = None
 else: 
     ylims_tt=(0.01, 0.30)#(-0.1, 0.3)

@@ -111,6 +111,7 @@ def gen_cable_init_apexes(df_shots, dec_chs=6, label_channel_apex="channel_idx_a
             
     return df_cable
 
+## helper functions for forward equation
 
 def _path_lengths(coords, coords_sec, coords_src, z_src):
     """ compute path lengths for straight rays"""
@@ -120,7 +121,8 @@ def _traveltimes_rays(coords, coords_sec, coords_src, z_src, v=1500):
     """ compute traveltimes for straight rays"""
     return _path_lengths(coords, coords_sec, coords_src, z_src) / v
 
-## derivatives 
+
+### derivatives of forward equation 
 
 def _ddm_coord(coords, coords_sec, coords_src, z_src, v=1500):
     """ derivative of forward equation w.r.t. receiver coordinates """
@@ -140,38 +142,8 @@ def _dxdy_coord(coords, coords_sec, coords_src, z_src, v=1500):
                   / (v* ( (coords-coords_src[0])**2 +(coords_sec-coords_src[1])**2 +z_src**2 )**1.5 ) )
           
 
-        
-def hessian(x_rec, y_rec, coords_src, z_src, v=1500):
-    """create full Hessian """
-    
-    xy_src = np.array(coords_src)
-    
-    tex_start=time.perf_counter()
-    
-    nparams = 2*x_rec.shape[0]
-    H = np.zeros([nparams,nparams])
-    
-    #populate d2/dx2
-    ddx2 = _ddm2_coord(x_rec, y_rec, xy_src, z_src, v=v )
-    ddy2 = _ddm2_coord(y_rec, x_rec, np.flip(xy_src), z_src, v=v )
-    
-    for i in range(nparams):
-        H[i,i] = ddx2[i]
-        H[i+nparams,i+nparams] = ddy2[i]
-    
-    
-    # populate cross derivatives dxdy
-    dxdy = _dxdy_coord(x_rec, y_rec, xy_src, z_src, v=v)
-    dydx = _dxdy_coord(y_rec, x_rec , np.flip(xy_src), z_src, v=v)
-    for i in range(nparams):
-        H[i,i+nparams] = dxdy[i]
-        H[i+nparams,i] = dydx[i]
-        
-    print("Hessian constructed in {:.3f}s".format(time.perf_counter()-tex_start) )
-    
-    return H
 
-#derivatives for squared forward equation 
+### derivatives for squared forward equation 
 
 def _ddm_ttsq_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t, v=1500):
     """ derivative of squared forward equation w.r.t. receiver coordinates """
@@ -184,7 +156,7 @@ def _ddm_ttsq_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t, 
 def _ddm2_ttsq_coord(coords, coords_sec, coords_src, z_src, tau0, htau, delta_t, v=1500 ):
     """ second derivative of squared forward equation w.r.t. receiver coordinates """
     
-    dists = _path_lengths(coords, coords_sec, coords_src, z_src, v)
+    dists = _path_lengths(coords, coords_sec, coords_src, z_src)
     dists_sq = dists**2
     
     A = (-1)*(coords-coords_src[0])**2 *( dists + v*htau*delta_t + v*tau0 )
@@ -218,7 +190,7 @@ def _ddm_ttsq_tau0(coords, coords_sec, coords_src, z_src, tau0, ht, delta_t, v=1
         
 def _ddm2_ttsq_tau0(n):
     """ 2. derivative of squared forward Eq. w.r.t tau0"""
-    return np.ones(n, dtpe='float32')*2
+    return np.ones(n, dtype='float32')*2
 
 def _ddm_ttsq_ht(coords, coords_sec, coords_src, z_src, tau0, ht, delta_t, v=1500):
     """ 1. derivative of squared forward Eq. w.r.t htau"""
@@ -227,11 +199,11 @@ def _ddm_ttsq_ht(coords, coords_sec, coords_src, z_src, tau0, ht, delta_t, v=150
         
 def _ddm2_ttsq_ht(n, delta_t):
     """ 2. derivative of squared forward Eq. w.r.t ht"""
-    return np.ones(n, dtpe='float32')*2* delta_t**2
+    return np.ones(n, dtype='float32')*2* delta_t**2
 
 def _dtau_dh_ttsq(n, delta_t):
     """cross derivative of squared forward Eq. w.r.t tau and ht"""
-    return np.ones(n, dtpe='float32')*2* delta_t
+    return np.ones(n, dtype='float32')*2* delta_t
 
 
 
@@ -272,8 +244,6 @@ def forward_multi(parameters, n_rec, x_src, y_src, z_src, vel_water=1500, paras_
             tshift = paras_tshift_ext[0]
         
         d_tmp = _traveltimes_rays(xrec_tmp, yrec_tmp, (x_src[s],y_src[s]), z_src, v=vel_water) + tshift
-        # d_tmp = (1/vel_water)* (xrec_tmp**2 - 2*xrec_tmp*x_src[s] + x_src[s]**2 + yrec_tmp**2 - 2*yrec_tmp*y_src[s] + y_src[s]**2 + z_src**2 \
-        #        )**0.5  + tshift #+ (s+delta_shotnum_origin)*paras_tshift[1])
         
         if s==0: 
             d = d_tmp.copy()
@@ -998,4 +968,37 @@ def plot_residuals_data(df_data, df_shots, tshifts, iters_plot=(2,12), tshift_pa
         plt.show()
     return 
 
+
+## OBSOLET
+
+       
+def hessian(x_rec, y_rec, coords_src, z_src, v=1500):
+    """create full Hessian """
+    
+    xy_src = np.array(coords_src)
+    
+    tex_start=time.perf_counter()
+    
+    nparams = 2*x_rec.shape[0]
+    H = np.zeros([nparams,nparams])
+    
+    #populate d2/dx2
+    ddx2 = _ddm2_coord(x_rec, y_rec, xy_src, z_src, v=v )
+    ddy2 = _ddm2_coord(y_rec, x_rec, np.flip(xy_src), z_src, v=v )
+    
+    for i in range(nparams):
+        H[i,i] = ddx2[i]
+        H[i+nparams,i+nparams] = ddy2[i]
+    
+    
+    # populate cross derivatives dxdy
+    dxdy = _dxdy_coord(x_rec, y_rec, xy_src, z_src, v=v)
+    dydx = _dxdy_coord(y_rec, x_rec , np.flip(xy_src), z_src, v=v)
+    for i in range(nparams):
+        H[i,i+nparams] = dxdy[i]
+        H[i+nparams,i] = dydx[i]
+        
+    print("Hessian constructed in {:.3f}s".format(time.perf_counter()-tex_start) )
+    
+    return H
 
