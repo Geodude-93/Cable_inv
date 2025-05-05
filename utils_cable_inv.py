@@ -11,6 +11,7 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+#import matplotlib.patheffects as mpl_pe
 from scipy.ndimage import gaussian_filter1d
 
 from Functions import utils, utils_pd, utils_plot
@@ -445,17 +446,17 @@ def smooth_params_gauss(params, n_rec, sigma):
     return np.concatenate( [gaussian_filter1d(params[q*n_rec : q*n_rec+n_rec], sigma=sigma) for q in range(2)] )
 
 
-def get_time_shifts_shots(tshift_paras, timestamps_shots, timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, mean=True): 
+def get_time_shifts_shots(tshift_paras, delta_ts, use_mean=True): 
     """ compute the total time shift for each shot using a linear time shift function"""
     if tshift_paras.ndim==1:
         tshift_tmp = np.zeros([1,tshift_paras.shape[0]])
         tshift_tmp[0,:]=tshift_paras
         tshift_paras=tshift_tmp
     
-    tshifts_shots=np.zeros((tshift_paras.shape[0], timestamps_shots.shape[0])) 
-    for s, tstamp in enumerate(timestamps_shots):
-        tshifts_shots[:,s] = tshift_paras[:,0] + tshift_paras[:,1]* (tstamp - timestamp_orig) 
-    if mean: 
+    tshifts_shots=np.zeros((tshift_paras.shape[0], delta_ts.shape[0])) 
+    for s, delta_t in enumerate(delta_ts):
+        tshifts_shots[:,s] = tshift_paras[:,0] + tshift_paras[:,1]* delta_t
+    if use_mean: 
         return  np.mean(tshifts_shots, axis=1)
     else:
         return  tshifts_shots
@@ -558,6 +559,7 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
     if df_cable_init is not None and rec_true: 
         ax00.plot(df_cable_init["UTM_X_true"], df_cable_init["UTM_Y_true"],  **plotparas["cable_true"]) #tab:blue
         #linestyle='-', linewidth=3.5, c='gray', label=r'$cable_{true}$', zorder=3, alpha=0.75
+        #path_effects=[mpl_pe.Stroke(linewidth=6.5, foreground='k'), mpl_pe.Normal()]
         list_df_cables.append(df_cable_init); labels_cables.append("true")
         # ax00.scatter(xy_coords[0], xy_coords[1], c='k', marker="X", s=80)
     
@@ -730,7 +732,7 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
         
         if tshifts.ndim==2: 
             ax022 = ax02.twinx()
-            fac_ax_htau = 1.5 if rec_true else 1.25
+            fac_ax_htau = 1.75 if rec_true else 1.25
             #print(f"DEBUG: idxes_iter={idxes_iter}, mus={tshifts[[idxes_iter],1]}")
             if tshift_paras_true is not None: 
                 ax022.axhline(tshift_paras_true[1], c='red', linestyle='--', linewidth=1.5) #label=r"$h_{\tau,true}$"
@@ -739,11 +741,9 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
             ax022.set(ylabel=r"$h_{\tau}$", ylim=(None, tshifts[idxes_iter,1].max()*fac_ax_htau) )
             ax022.tick_params(axis='y', labelcolor="red")
             
-            tshifts_total = get_time_shifts_shots(tshifts[idxes_iter,:], df_shots["timestamp_shot"],
-                                                  timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, mean=True)
+            tshifts_total = get_time_shifts_shots(tshifts[idxes_iter,:], df_shots["delta_t"], use_mean=True)
             if tshift_paras_true is not None:
-                tshift_total_true = get_time_shifts_shots(tshift_paras_true, df_shots["timestamp_shot"],
-                                                      timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, mean=True)
+                tshift_total_true = get_time_shifts_shots(tshift_paras_true, df_shots["delta_t"], use_mean=True)
                 ax02.axhline(tshift_total_true, c='k', linestyle='--', zorder=1, linewidth=1.5)
         
             ax02.plot(idxes_iter, tshifts_total, '-o', c='k', markersize=2.5, linewidth=1, label=r"$\tau$")
@@ -882,11 +882,9 @@ def plot_residuals_data(df_data, df_shots, tshifts, iters_plot=(2,12), tshift_pa
         if tshifts.ndim==2: 
             #tshifts_plot = tshifts[:,0]
             
-            tshifts_total = get_time_shifts_shots(tshifts[idxes_iter,:], df_shots["timestamp_shot"],
-                                                  timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, mean=True)
+            tshifts_total = get_time_shifts_shots(tshifts[idxes_iter,:], df_shots["delta_t"], use_mean=True)
             if tshift_paras_true is not None:
-                tshift_total_true = get_time_shifts_shots(tshift_paras_true, df_shots["timestamp_shot"],
-                                                      timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, mean=True)
+                tshift_total_true = get_time_shifts_shots(tshift_paras_true, df_shots["delta_t"], use_mean=True)
     
     # plot reference channels
     if plot_channels_ref:

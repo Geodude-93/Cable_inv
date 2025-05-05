@@ -14,7 +14,7 @@ from Functions import utils, utils_pd
 import utils_cable_inv
 import inv
 from utils_cable_inv import model2paras, paras2model, data2df, df_from_data, forward_multi, \
-        lsqr_misfit_model, TIMESTAMP_FIRST_SHOT_LINE2 #datavec2data
+        lsqr_misfit_model
 
 
 # constants
@@ -40,9 +40,9 @@ sigma_noise = 0.003 #0.006      # random noise level for synthetic case
 sigma_gaussfilt_tt=3            # smoothing of traveltimes to determine apex channel of shot
 
 ###  general inversion
-full_newton=False;              # use the full newton algorithm and the second derivatives
-niter=15 #80                    # number of iterations for inversion            
-interval_iter_save=5           # interval for iterations to save results
+full_newton=True;              # use the full newton algorithm and the second derivatives
+niter=80 #80                    # number of iterations for inversion            
+interval_iter_save=10          # interval for iterations to save results
 iters_save = np.append(np.array([1,2]), np.arange(10,niter+interval_iter_save, interval_iter_save) )
 iters_save_cable=np.arange(0,niter+1)
 
@@ -91,8 +91,8 @@ apply_gauss_filt=0; sigma_smoothing=3   # apply gaussian smoothing during iterat
 
 
 ## plot settings
-plot_model=1                       # plot true and initial model
-plot_dobs=1                             # plot exemplary data
+plot_model=0                      # plot true and initial model
+plot_dobs=0                            # plot exemplary data
 plot_smooth_mat=0                       # plot regularization matrix
  
  ######################### END SETTINGS #########################################
@@ -142,25 +142,23 @@ channels_used = np.arange(chlims_picks[0],chlims_picks[1]+1)
 assert np.array_equal(channels_picks, channels_used), "channels missing"
 df_picks = df_picks.merge(pd.DataFrame({"channel_idx":channels_used, "chidx_local":np.arange(0,len(channels_used))} ), \
                           on="channel_idx").sort_values(\
-                              by=["shotnumber","channel_idx"], ignore_index=True)
+                            by=["shotnumber","channel_idx"], ignore_index=True)
     
 # create uncertainties linear increasing with offset
 df_uncertainties =  utils_cable_inv.gen_uncertainty_offset(lims_linear=(0,300), 
                                dec_chs=DEC_CHS, offset_max=500, lims_unc=lims_uncertainty, 
                                offset_crit_angle=offset_crit_angle, unc_crit=uncert_crit_angle)
-
 #fig=plt.figure()
 #plt.plot(df_uncertainties["offset_channel_abs"], df_uncertainties["uncertainty"])
+#plt.show()
 
 #utils.done()
 
-# generate init cable
+# generate initial cable position
 df_cable_init = utils_cable_inv.gen_cable_init_apexes(df_shots_all)
 df_cable_init = utils_pd.sub_from_df(df_cable_init, chlims_picks, "channel_idx")
 n_rec = len(df_cable_init)
 parameters_init = model2paras(df_cable_init.UTM_X.values, df_cable_init.UTM_Y.values)
-
-
 
 #utils.done()
     
@@ -197,15 +195,11 @@ if true_model:
     
     df_obs = df_from_data(d_obs, shots_picks, channels_used)
     
-  
-    
     # determine apexes and offset of predicted shots
-    df_obs_pro =  utils_pd.gaussfilt_df(df_obs, cname_sep="shotnumber", cname_data="traveltime", cname_filt="traveltime_gaussfilt", 
-                     sigma=3)
+    df_obs_pro =  utils_pd.gaussfilt_df(df_obs, cname_sep="shotnumber", cname_data="traveltime", 
+                                        cname_filt="traveltime_gaussfilt", sigma=3)
     df_apex_pred = utils_cable_inv.get_apexes(df_obs_pro, label_time="traveltime_gaussfilt", labels_out=("channel_idx_apex","time_apex") )
     df_obs =  utils_cable_inv.add_offset2dfpicks(df_obs_pro, df_apex_pred, label_apex_channel="channel_idx_apex")
-   
-    
    
     #create bools
     df_obs["flag_offset"] = np.zeros(len(df_obs))
@@ -231,10 +225,19 @@ else:
     for s,shot in enumerate(shots_picks):
         df_tmp = df_picks[df_picks["shotnumber"]==shot]
         bools_chs[s, df_tmp["chidx_local"].values] = True
-    #bools_chs_flat = bools_chs.flatten()
     
 d_obs = df_obs["traveltime"].values
 ndata=len(d_obs)
+
+if plot_model: 
+    fig, ax = plt.subplots(1,1)
+    ax.plot(df_cable_init["UTM_X_init"],df_cable_init["UTM_Y_init"], label='init', c='k' )
+    if true_model:
+        ax.plot(df_cable_init["UTM_X_true"],df_cable_init["UTM_Y_true"], label='true', c='tab:blue', linewidth=2 )
+    ax.scatter(df_shots["UTM_X"], df_shots["UTM_Y"], marker='*', c='r', s=10, label="shots" )
+    ax.set(xlabel="X", ylabel="Y")
+    ax.legend()
+    plt.show()
 
 
 #utils.done()
@@ -251,7 +254,7 @@ Wd = utils_cable_inv.create_weight_mat(df_obs.weight.values, flatten=False)
 
 
 
-
+# generate smoothing matrix 
 smooth_mat = utils_cable_inv.fdmat_xy_sec(n_rec)
 #plot_smooth_mat=1
 if plot_smooth_mat: 
@@ -259,16 +262,6 @@ if plot_smooth_mat:
     mesh = plt.matshow(smooth_mat) #smooth_mat_square
     plt.colorbar(mesh)
     plt.title("smooth mat")
-    plt.show()
-    
-if plot_model: 
-    fig, ax = plt.subplots(1,1)
-    ax.plot(df_cable_init["UTM_X_init"],df_cable_init["UTM_Y_init"], label='init', c='k' )
-    if true_model:
-        ax.plot(df_cable_init["UTM_X_true"],df_cable_init["UTM_Y_true"], label='true', c='tab:blue', linewidth=2 )
-    ax.scatter(df_shots["UTM_X"], df_shots["UTM_Y"], marker='*', c='r', s=10, label="shots" )
-    ax.set(xlabel="X", ylabel="Y")
-    ax.legend()
     plt.show()
     
 #utils.done()
@@ -315,7 +308,6 @@ if tt_squared:          # jacobian and hessian are npt constant and are thus com
     jac_tshift = None;
 else:                   # jacobian and hessian are constant and are precomputed
     jac_tshift = inv.jacobian_timeshift(df_shots["delta_t"].values, bools_chs )
-    #hessian_inv_tshift = np.linalg.inv(jac_tshift.T @ Wd.T @ Wd @ jac_tshift + alpha_tshift)
 
 
 #utils.done()
@@ -356,22 +348,22 @@ for i in range(niter):
         alphas_tshift[i] = np.max([ alpha_tshift_min, alpha_tshift_start* beta_alpha**i])
         
         tshift_paras_new = inv.inv_iter_timeshift(parameters, tshift_paras, d_res, 
-                             d_obs, obj_val, Wd,
-                             tt_squared=tt_squared,
-                             jacobian=jac_tshift,
-                             alpha=alphas_tshift[i],
-                             steplen_init=1.0,
-                             gamma=gamma_tshift,
-                             beta_steplen=beta_steplen_tshift,
-                             args_fwd=args_fwd,
-                             kargs_fwd=kargs_fwd,
-                             kargs_obj=kargs_obj,
-                             args_jac=args_jac,
-                             thresh_delta=thresh_delta_tshift,
-                             it=iterx,
-                             full_output=False,
-                             full_newton=full_newton,
-                             )
+                                                 d_obs, obj_val, Wd,
+                                                 tt_squared=tt_squared,
+                                                 jacobian=jac_tshift,
+                                                 alpha=alphas_tshift[i],
+                                                 steplen_init=1.0,
+                                                 gamma=gamma_tshift,
+                                                 beta_steplen=beta_steplen_tshift,
+                                                 args_fwd=args_fwd,
+                                                 kargs_fwd=kargs_fwd,
+                                                 kargs_obj=kargs_obj,
+                                                 args_jac=args_jac,
+                                                 thresh_delta=thresh_delta_tshift,
+                                                 it=iterx,
+                                                 full_output=False,
+                                                 full_newton=full_newton,
+                                                 )
 
     ### inversion for cable position
     # define args and kargs
@@ -439,8 +431,8 @@ print(f"ex time inversion: {time.perf_counter()-tex_start_all}")
 #%% plot results 
 
 if invert_for_timeshift:
-    tshifts_total = utils_cable_inv.get_time_shifts_shots(tshifts_iter[:,:], df_shots["timestamp_shot"],
-                                          timestamp_orig=TIMESTAMP_FIRST_SHOT_LINE2, mean=True)
+    tshifts_total = utils_cable_inv.get_time_shifts_shots(tshifts_iter[:,:], df_shots["delta_t"],
+                                                                          use_mean=True)
 
 ## plot settings
 
@@ -501,13 +493,16 @@ if sigma_noise >= 0.006:
     
     
 if tt_squared: 
-    ylims_tt=(0, 0.18)
-    
-
+    #ylims_tt=(0, 0.18)
+    df_data_plot = df_data_all.copy()
+    for col in ("traveltime","traveltime_pred"):
+        df_data_plot[col] = np.sqrt(df_data_plot[col].values) 
+else:
+    df_data_plot = df_data_all
 
 # plotting
 figname_tmp = path_figs + f'cable_inv_{suffix_result}'
-utils_cable_inv.plot_inv_iter(df_cable_all, df_shots, df_data_all, misfits_norm, tshifts_iter, 
+utils_cable_inv.plot_inv_iter(df_cable_all, df_shots, df_data_plot, misfits_norm, tshifts_iter, 
                               iters_plot=iters_plot, 
                               xlims_chs=xlims_chs, 
                               tshift_paras_true=tshift_paras_true_plot,
