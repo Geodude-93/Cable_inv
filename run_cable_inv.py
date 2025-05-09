@@ -34,7 +34,7 @@ path_figs = "./Figs/"
 save_results=0                 # save results as csv and pickle files for reload
 
 ##  forward 
-tt_squared=False;               # square traveltimes / forward equation to convexify error surface
+tt_squared=False;               # square traveltimes / forward equation
 vel_water=1500                  # acoustic water velocity
 sigma_noise = 0.003 #0.006      # random noise level for synthetic case 
 sigma_gaussfilt_tt=3            # smoothing of traveltimes to determine apex channel of shot
@@ -355,6 +355,7 @@ for i in range(niter):
                                                  d_obs, obj_val, Wd,
                                                  tt_squared=tt_squared,
                                                  jacobian=jac_tshift,
+                                                 d_pred=d_pred,
                                                  alpha=alphas_tshift[i],
                                                  steplen_init=1.0,
                                                  gamma=gamma_tshift,
@@ -379,6 +380,8 @@ for i in range(niter):
                                                          alphas[i], smooth_mat, args_jac, args_fwd,
                                                          kargs_jac=kargs_jac,
                                                          kargs_fwd=kargs_fwd,
+                                                         tt_squared=tt_squared, 
+                                                         d_pred=d_pred,
                                                          thresh_delta=thresh_delta_xy,
                                                          steplen_init=steplen_init,
                                                          beta_steplen=beta_steplen,

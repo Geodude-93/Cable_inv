@@ -197,7 +197,7 @@ def ddm_jacobian_positions(parameters, tshift_paras, bools_rec, x_src, y_src, z_
 
 def inv_iter_timeshift(parameters, tshift_paras, d_res, d_obs, obj_val,  Wd, 
                        alpha=1.0, steplen_init=1.0, gamma=1e-3, beta_steplen=0.5, 
-                       tt_squared=False, jacobian=None, args_jac=None, 
+                       tt_squared=False, jacobian=None, d_pred=None, args_jac=None, 
                        kargs_jac=None, args_fwd=None, kargs_fwd=None, 
                        kargs_obj=None, thresh_delta=None, full_newton=False, 
                        it=0, full_output=False, verbose=True, vel_water=1500,
@@ -212,10 +212,17 @@ def inv_iter_timeshift(parameters, tshift_paras, d_res, d_obs, obj_val,  Wd,
     
     delta_used = np.zeros(len(tshift_paras), dtype='float32')
     
+    w = np.diag(Wd) # extract diagonal weights
+    
     if tt_squared:
         assert args_jac is not None, "provide list of key arguments to generate Jacobian"
         jacobian = jacobian_timeshift_ttsq(parameters, tshift_paras, *args_jac, vel_water=vel_water)
+        
+        assert d_pred is not None, "! d_pred ust be provided"
+        d_res_scaled = 2* d_pred* w**2 * d_res
     else:
+        d_res_scaled= w**2 * d_res
+        
         if jacobian is None:
             jacobian = jacobian_timeshift(kargs_fwd["delta_ts"], kargs_fwd["bools_rec"]  )
         
@@ -227,8 +234,8 @@ def inv_iter_timeshift(parameters, tshift_paras, d_res, d_obs, obj_val,  Wd,
             
     hess_pos_def = utils.is_pos_def(hessian)
     hessian_inv = np.linalg.inv(hessian )
-    
-    grad = jacobian.T @Wd.T @Wd @d_res + alpha *tshift_paras
+ 
+    grad = jacobian.T @ d_res_scaled + alpha *tshift_paras
     search_dir =  -hessian_inv @ grad
     steplen = steplen_init
     obj_val_new = obj_val
@@ -269,7 +276,7 @@ def inv_iter_timeshift(parameters, tshift_paras, d_res, d_obs, obj_val,  Wd,
 
 
 def inv_iter_position(parameters, tshift_paras, d_res, d_obs, obj_val, Wd, alpha, Wm, args_jac, args_fwd, kargs_jac=None, 
-                    kargs_fwd=None, full_newton=False, thresh_delta=None, full_output=False, verbose=True,
+                    kargs_fwd=None, full_newton=False, tt_squared=False, d_pred=None, thresh_delta=None, full_output=False, verbose=True,
                     steplen_init=1.0, gamma=1e-3, ncalls_max=200, beta_steplen=0.5):
     """ iteration of coordinate inversion"""
     
@@ -282,7 +289,17 @@ def inv_iter_position(parameters, tshift_paras, d_res, d_obs, obj_val, Wd, alpha
     
     hess_pos_def = utils.is_pos_def(hessian)
     hessian_inv = np.linalg.inv(hessian )
-    gradient = jacobian.T @Wd.T @Wd @d_res + alpha* Wm.T @Wm @ parameters # + #@smooth_mat
+    
+    w = np.diag(Wd) # extract diagonal weights
+
+    if tt_squared: 
+        assert d_pred is not None, "! d_pred ust be provided"
+
+        d_res_scaled = 2* d_pred* w**2 * d_res
+    else:
+        d_res_scaled= w**2 * d_res
+    
+    gradient = jacobian.T @d_res_scaled + alpha* Wm.T @Wm @ parameters # + #@smooth_mat
     search_dir =  -hessian_inv @ gradient
     
     steplen =  steplen_init

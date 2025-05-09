@@ -18,7 +18,7 @@ import utils_cable_inv
 
 #input
 suffix = "pos" #"sin_even_srcs"
-suffix_algo="gauss_base" #"newton_base"  #"gauss_base"
+suffix_algo="newton_ttsq" #"newton_base"  #"gauss_base"
 suffix += "_"+ suffix_algo
 
 shotfile = "./Info/shots.csv"
