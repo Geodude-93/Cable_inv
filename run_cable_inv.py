@@ -40,8 +40,8 @@ sigma_noise = 0.003 #0.006      # random noise level for synthetic case
 sigma_gaussfilt_tt=3            # smoothing of traveltimes to determine apex channel of shot
 
 ###  general inversion
-full_newton=True;              # use the full newton algorithm and the second derivatives
-niter=80 #80                    # number of iterations for inversion            
+full_newton=False;              # use the full newton algorithm and the second derivatives
+niter=40 #80                    # number of iterations for inversion            
 interval_iter_save=10          # interval for iterations to save results
 iters_save = np.append(np.array([1,2]), np.arange(10,niter+interval_iter_save, interval_iter_save) )
 iters_save_cable=np.arange(0,niter+1)
@@ -58,7 +58,7 @@ only_odd_shots=0                    # # if 1 only odd shot numbers are used
 shot_interval_use=None #5 # None    # interval of used shots, default is None -> every shot is used
 
 # true model 
-true_model=1                       # if true generate synthetic model and data 
+true_model=1                      # if true generate synthetic model and data 
 sign_coord_shift=1                 # coordinate shift in positive (1) or negative (-1) direction
 offset_xy_true = (100, 75)         # offset in x and y of true model from initial model 
 sign_tshift=1
@@ -73,7 +73,7 @@ offset_xy_init=None #(-75,-75) #None               # shift the initial model in 
 invert_for_timeshift=1            # set 1 if inversion for time shift and cable position 
 tshift_paras_init = np.array((0.0, 0.0)) # initial time shift parameters
 #alpha_tshift=1.0e+06                    # regularization weight for time shift
-alpha_tshift_start, alpha_tshift_min = 5.0e+05, 1.0e+03 
+alpha_tshift_start, alpha_tshift_min =  5.0e+05, 1.0e+03 
 steplen_tshift_init, beta_steplen_tshift = 1.0, 0.5 # steplen parameters for time shift
 
 #clip_tshift_iter=True
@@ -86,7 +86,7 @@ gamma=0.001 #0.0001 #0.0001 # 0.01      # weight used in steplen estimation (see
 ncalls_max=200                          # max number of call to determine the step length
 alpha_start, alpha_min = 100, 0.1       # min and max regularization weights for cable pos inversion
 beta_alpha = 0.8 #0.8                   # regularization decay (see Eqs)
-thresh_delta_xy = 50 #25 #50 #25 #50        # clip model updates, set to None or 0 if undesired
+thresh_delta_xy = 25 #25 #50 #25 #50        # clip model updates, set to None or 0 if undesired
 apply_gauss_filt=0; sigma_smoothing=3   # apply gaussian smoothing during iterations
 
 
@@ -266,9 +266,13 @@ if plot_smooth_mat:
     
 #utils.done()
     
-    
+tex_start=time.perf_counter()
 d_pred_init = forward_multi(parameters_init, n_rec, x_src, y_src, wdepth_mean, vel_water=vel_water, paras_tshift_ext=tshift_paras_init,
                              bools_rec=bools_chs, delta_ts=df_shots["delta_t"].values, squared=tt_squared)
+tex_fwd = time.perf_counter()-tex_start
+
+#print("done"); sys.exit()
+
 d_res = d_pred_init -d_obs
 df_pred = df_obs.copy()
 df_pred["traveltime_pred"]=d_pred_init
@@ -425,6 +429,10 @@ for i in range(niter):
             else: 
                 df_data_all = pd.concat([df_data_all, df_data])
             niter_saved+=1
+            
+if tt_squared:
+    for col in ("traveltime","traveltime_pred"):
+        df_data_all[col] = np.sqrt(df_data_all[col].values) 
 
 print(f"ex time inversion: {time.perf_counter()-tex_start_all}")
 
@@ -433,6 +441,7 @@ print(f"ex time inversion: {time.perf_counter()-tex_start_all}")
 if invert_for_timeshift:
     tshifts_total = utils_cable_inv.get_time_shifts_shots(tshifts_iter[:,:], df_shots["delta_t"],
                                                                           use_mean=True)
+    tshift_total_true = tshift_paras_true[0]+tshift_paras_true[1]*df_shots["delta_t"].values.mean() 
 
 ## plot settings
 
@@ -454,7 +463,7 @@ ylims_misfit=(0,10)
 # automatic plot settings
 if true_model:
     ylims_tt=(0.0, 0.4) if sinosoidal_cable else  (0.0, 0.4) #(-0.1, 0.3)
-    ylims_tshift=(None,1.05*tshifts_total.max()) if invert_for_timeshift else None
+    ylims_tshift=(None,1.05*np.max([tshifts_total.max(), tshift_total_true]) ) if invert_for_timeshift else None
     
     if invert_for_timeshift:
         tshift_paras_true_plot = tshift_paras_true
@@ -490,19 +499,24 @@ elif shot_interval_use:
 
 if sigma_noise >= 0.006:
     suffix_result +="_noisy"
+
+if full_newton:     
+    suffix_algo = "newton" 
+else: 
+    suffix_algo = "gauss"
     
     
 if tt_squared: 
     #ylims_tt=(0, 0.18)
-    df_data_plot = df_data_all.copy()
-    for col in ("traveltime","traveltime_pred"):
-        df_data_plot[col] = np.sqrt(df_data_plot[col].values) 
+    suffix_algo += "_ttsq"
 else:
-    df_data_plot = df_data_all
+    suffix_algo += "_base"
+    
+suffix_result += "_"+suffix_algo
 
 # plotting
 figname_tmp = path_figs + f'cable_inv_{suffix_result}'
-utils_cable_inv.plot_inv_iter(df_cable_all, df_shots, df_data_plot, misfits_norm, tshifts_iter, 
+utils_cable_inv.plot_inv_iter(df_cable_all, df_shots, df_data_all, misfits_norm, tshifts_iter, 
                               iters_plot=iters_plot, 
                               xlims_chs=xlims_chs, 
                               tshift_paras_true=tshift_paras_true_plot,
@@ -552,7 +566,7 @@ if save_results:
                     "timeshift":{"tshift_true":tshift_paras_true, "tshift_init":tshift_paras_init,
                                  "tshift_iter":tshifts_iter, "flag_timeshift":invert_for_timeshift, 
                                  "sign_tshift":sign_tshift},
-                    "paras":{"alpha":alphas,"alpha_tshift":alpha_tshift,"beta_alpha":beta_alpha,
+                    "paras":{"alpha":alphas,"alpha_tshift":alphas_tshift,"beta_alpha":beta_alpha,
                              "alpha_min":alpha_min,"alpha_start":alpha_start,
                              "thresh_tshift":thresh_delta_tshift, "thres_xy":thresh_delta_xy,
                              "gamma":gamma, "gamma_tshift":gamma_tshift, "beta_steplen":beta_steplen,
@@ -567,7 +581,7 @@ if save_results:
     
     with open(path_results + f'/Info/info_{suffix_result}.pkl', 'wb') as fp:
         pickle.dump(dict_results, fp)
-        print('results saved successfully pickl file')
+        print('results saved pickl file')
     
     
 print("done")

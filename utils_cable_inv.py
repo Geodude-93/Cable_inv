@@ -490,7 +490,7 @@ def plot_hessian_iter(hessian, hessian_inv, grad, delta_paras, title=None):
 def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,12), tshift_paras_true=None, 
                   df_cable_init=None, df_cable_orig=None, shots_plot=None, label_shots=True, xlims_chs=None,
                   rec_init=True, rec_true=True, rec_iter=True, title=None, shot_interval_plot=5, xlims_map=(-300, 800), 
-                  y_center=-200, cbar=True, ylims_tt=(0,0.5), ylims_tshift=None, ylims_misfit=None, 
+                  y_center=-200, cbar=True, ylims_tt=(0,0.5), ylims_tshift=None, ylims_htau=None, ylims_misfit=None, 
                   figname=None, label_subs=False, shot_interval_annotate=5, figsize=(10,10), dpi=150, 
                   plot_channels_ref=True, channels_ref=None, interval_chs_ref=500, xlabel_tt="channel_idx", 
                   show_fig=True, ylabel_misfit="Weighted RMSE", yscale_misfit="linear", 
@@ -731,14 +731,17 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
        
         
         if tshifts.ndim==2: 
+            fac_ax_htau = 1.1 if rec_true else 1.25
+            ylims_htau = (None, tshifts[idxes_iter,1].max()*fac_ax_htau) if ylims_htau is None else ylims_htau
+            
             ax022 = ax02.twinx()
-            fac_ax_htau = 1.75 if rec_true else 1.25
+           
             #print(f"DEBUG: idxes_iter={idxes_iter}, mus={tshifts[[idxes_iter],1]}")
             if tshift_paras_true is not None: 
                 ax022.axhline(tshift_paras_true[1], c='red', linestyle='--', linewidth=1.5) #label=r"$h_{\tau,true}$"
             ax022.plot(idxes_iter, tshifts[idxes_iter,1], '-o', markersize=3, zorder=2, 
                        c='red', label=r"$h_{\tau}$"), 
-            ax022.set(ylabel=r"$h_{\tau}$", ylim=(None, tshifts[idxes_iter,1].max()*fac_ax_htau) )
+            ax022.set(ylabel=r"$h_{\tau}$", ylim=ylims_htau )
             ax022.tick_params(axis='y', labelcolor="red")
             
             tshifts_total = get_time_shifts_shots(tshifts[idxes_iter,:], df_shots["delta_t"], use_mean=True)
@@ -750,7 +753,7 @@ def plot_inv_iter(df_cable, df_shots, df_data, misfits, tshifts, iters_plot=(2,1
             l1, labs1 = ax02.get_legend_handles_labels()
             l2, labs2 = ax022.get_legend_handles_labels()
             
-            ax02.legend(l1+l2, labs1+labs2, ncols=2 )
+            ax02.legend(l1+l2, labs1+labs2, ncols=2, loc="lower right" )
             ax02.tick_params(axis='y', labelcolor="darkblue")
         
         else:

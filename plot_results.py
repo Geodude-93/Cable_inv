@@ -17,7 +17,10 @@ import utils_cable_inv
 
 
 #input
-suffix = "sin" #"sin_even_srcs"
+suffix = "pos" #"sin_even_srcs"
+suffix_algo="gauss_base" #"newton_base"  #"gauss_base"
+suffix += "_"+ suffix_algo
+
 shotfile = "./Info/shots.csv"
 cablefile_orig = "./Info/cable_orig.csv"
 path_results="./Output/"
@@ -28,35 +31,37 @@ path_figs = "./Figs/"
 
 ## plot settings, manual
 save_fig=1
-idxes_iter = [1,-2]
+idxes_iter = [0,-1]
 
-width_ratios=(2, 1.25)
-height_ratios=(1.75,1.75, 1.0)
-xlims_map = (-450,600) #(-600,800) #(-300, 800)
+width_ratios=None #(2, 1.25)
+height_ratios=None #(1.75,1.75, 1.0)
+xlims_map = (-600,800) #(-600,800) #(-300, 800)
 y_center = 0 #-200
-shot_interval_plot = 20
-xlims_chs = (7630,7780) #(7450, 7825) #None #(45_000,46_850)
-shots_plot=(260,275,290,305,320,335,350)
-shots_plot= np.arange(255,370,15)
-shots_plot=(260,275,290,305,320,335,350)
+shot_interval_plot = None# 20
+xlims_chs=(7500, 7810) #None #(45_000,46_850)
+shots_plot=(260,275,290,305,320,335,350) #shots_plot= np.arange(255,370,15)
 #shots_plot = [shot-7 for shot in shots_plot]
 
-plot_inset_zoom=False #True
+plot_inset_zoom=True #True
 paras_inset = {"orig":(75,75), "dxdy":(150,150), "width":0.45, "xy_anker":(0.02,0.02) }
-figsize=(5,6.5); dpi=150
-label_subs=False
+figsize=(7.5,8.0); dpi=150
+
+ylims_misfit=(0,5)
+ylims_htau=(-1e-06, 6.5e-06)
+
+label_subs=True
 kargs_subfig_labels = dict(labels=None, kw_text=None, zorder=5, halfbracket=True, 
                   fontsize=13, xy_shifts={"1":(0.08,0),"3":(-0.02,0)} )
 
 plot_params = {
          'figure.titlesize': 11,
-         'axes.labelsize': 10.5,
-         'axes.titlesize': 10.5,
-         'xtick.labelsize': 10.5,
-         'ytick.labelsize':10.5,
-         'xtick.major.size': 5.0,
-         'ytick.major.size': 5.0, 
-         'legend.fontsize': 9.5}
+         'axes.labelsize': 9.0,
+         'axes.titlesize': 9.5,
+         'xtick.labelsize': 9.0,
+         'ytick.labelsize':9.0,
+         'xtick.major.size': 4.0,
+         'ytick.major.size': 4.0, 
+         'legend.fontsize': 9.0}
 plt.rcParams.update(plot_params)
 
 
@@ -69,20 +74,20 @@ df_data = pd.read_csv(path_results + f"Data/data_{suffix}.csv", sep='\t')
 
 
 
+
 with open(infofile, 'rb') as fp:
     info = pickle.load(fp)
     print("info loaded from pickle")
 
 shotnums_data= np.unique(df_data["shotnumber"])
 df_shots = df_shots[df_shots["shotnumber"].isin(shotnums_data)].reset_index(drop=True)
+df_shots["delta_t"] = df_shots["timestamp_shot"]-utils_cable_inv.TIMESTAMP_FIRST_SHOT_LINE2 
 
 #utils.done()
 
 tshifts_iter = info["timeshift"]["tshift_iter"]
 if info["timeshift"]["flag_timeshift"]:
-    tshifts_total = utils_cable_inv.get_time_shifts_shots(tshifts_iter, df_shots["timestamp_shot"],
-                                          timestamp_orig=utils_cable_inv.TIMESTAMP_FIRST_SHOT_LINE2, 
-                                          mean=True)
+    tshifts_total = utils_cable_inv.get_time_shifts_shots(tshifts_iter, df_shots["delta_t"], use_mean=True)
 else: 
     tshifts_total=None
     
@@ -94,8 +99,9 @@ iters = np.unique(df_data["iter"])
 
 # automatic plot settings
 if info["model"]["true_model"]:
-    ylims_tt=(0.155, 0.4) if info["model"]["sin_cable"] else  (0.175, 0.37) #(-0.1, 0.3)
-    ylims_tshift=(None,1.1*tshifts_total.max()) if  info["timeshift"]["flag_timeshift"] else None
+    ylims_tt=(0.125, 0.4) if info["model"]["sin_cable"] else  (0.05, 0.37) #(-0.1, 0.3)
+    ylims_tshift=(-0.05, 0.165) if  info["timeshift"]["flag_timeshift"] else None #1.1*tshifts_total.max()
+    
     
     if info["timeshift"]["flag_timeshift"]:
         tshift_paras_true_plot = info["timeshift"]["tshift_true"]
@@ -138,13 +144,13 @@ elif info["model"]["shot_interval"]:
 if info["paras"]["sigma_noise"]>=0.006:
     suffix_result += "_noisy"
     
-assert suffix==suffix_result, "suffix deviate from loaded one "
+#assert suffix==suffix_result, "suffix deviate from loaded one "
 
 iters_plot = iters[ idxes_iter ]
     
 
 # plotting
-figname_tmp = path_figs + f'cable_inv_{suffix_result}_test' if save_fig else None
+figname_tmp = path_figs + f'cable_inv_{suffix}' if save_fig else None
 utils_cable_inv.plot_inv_iter(df_cable, df_shots, df_data, info["misfit"], tshifts_iter, 
                               iters_plot=iters_plot, 
                               xlims_chs=xlims_chs, 
@@ -162,6 +168,8 @@ utils_cable_inv.plot_inv_iter(df_cable, df_shots, df_data, info["misfit"], tshif
                               cbar=False, 
                               ylims_tt=ylims_tt, 
                               ylims_tshift=ylims_tshift, 
+                              ylims_htau=ylims_htau, 
+                              ylims_misfit=ylims_misfit,
                               figname=figname_tmp,
                               label_subs=label_subs, 
                               figsize=figsize, 
@@ -170,10 +178,9 @@ utils_cable_inv.plot_inv_iter(df_cable, df_shots, df_data, info["misfit"], tshif
                               plot_inset_zoom=plot_inset_zoom,
                               paras_inset=paras_inset, 
                               plot_channels_ref=True, 
-                              yscale_misfit="log", 
+                              yscale_misfit="linear", 
                               kargs_subfig_labels=kargs_subfig_labels, 
-                              width_ratios=width_ratios, 
-                              height_ratios=height_ratios)
+                              )
 
 print("done")
 utils.done()
